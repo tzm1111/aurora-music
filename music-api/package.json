@@ -1,0 +1,13 @@
+{
+  "name": "aurora-music-netease-api",
+  "private": true,
+  "version": "1.0.0",
+  "description": "本地运行的 NeteaseCloudMusicApi 服务，为 Aurora Music 提供网易云搜索与播放地址",
+  "type": "module",
+  "scripts": {
+    "start": "NeteaseCloudMusicApi"
+  },
+  "dependencies": {
+    "NeteaseCloudMusicApi": "^4.33.0"
+  }
+}
