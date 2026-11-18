@@ -1,6 +1,24 @@
 // 与 Aurora 后端 /api 交互的最小封装
 // 开发环境由 Vite 代理到 http://localhost:3001（见 vite.config.ts）
 import type { Track } from '../types';
+export const API_BASE = (import.meta.env?.VITE_API_BASE_URL || '').replace(/\/+$/, '');
+const SESSION_KEY = 'aurora-backend-session:' + API_BASE;
+export function apiUrl(path: string) { return API_BASE + path; }
+async function apiFetch(path: string, init: RequestInit = {}) {
+  const headers = new Headers(init.headers);
+  if (API_BASE) {
+    try { const token = sessionStorage.getItem(SESSION_KEY); if (token) headers.set('X-Aurora-Session', token); } catch { /* 受限浏览器仍可匿名播放 */ }
+  }
+  const response = await fetch(apiUrl(path), { ...init, headers, credentials: API_BASE ? 'omit' : 'same-origin' });
+  const token = API_BASE ? response.headers.get('X-Aurora-Session') : null;
+  if (API_BASE && token) { try { sessionStorage.setItem(SESSION_KEY, token); } catch { /* 不持久化登录状态 */ } }
+  return response;
+}
+export async function resolveAudioSource(src: string, signal?: AbortSignal): Promise<string> {
+  const match = API_BASE && src.match(/^\/api\/music\/stream\/netease\/(\d+)/);
+  if (match) { const result = await apiRequest<{ src: string }>('/api/music/playback/netease/' + match[1], undefined, signal); return apiUrl(result.src); }
+  return src.startsWith('/api/') ? apiUrl(src) : src;
+}
 
 export type ProviderId = 'local' | 'netease' | 'qq';
 
@@ -42,7 +60,7 @@ async function readJson<T>(res: Response): Promise<T> {
 }
 
 export async function fetchProviders(signal?: AbortSignal): Promise<ProviderStatus[]> {
-  const res = await fetch('/api/music/providers', { signal });
+  const res = await apiFetch('/api/music/providers', { signal });
   const data = await readJson<ProvidersResponse>(res);
   if (!res.ok || !data.success) {
     throw new Error(data.error?.message || '获取音源状态失败');
@@ -58,7 +76,7 @@ export async function searchTracks(
   offset = 0
 ): Promise<SearchResult> {
   const params = new URLSearchParams({ source, q, limit: String(limit), offset: String(offset) });
-  const res = await fetch(`/api/music/search?${params.toString()}`, { signal });
+  const res = await apiFetch(`/api/music/search?${params.toString()}`, { signal });
   const data = await readJson<SearchResponse>(res);
   if (!res.ok || !data.success) {
     throw new Error(data.error?.message || `搜索失败（HTTP ${res.status}）`);
@@ -70,7 +88,7 @@ export type DJPlan = { description: string; label: string; intro: string; querie
 export type DJResult = { success: boolean; mode: 'ai' | 'rules'; modelAvailable: boolean; plan: DJPlan; tracks: Track[]; loggedIn: boolean };
 export type AccountStatus = { loggedIn: boolean; profile: { nickname: string; avatarUrl: string; vipType: number } | null };
 export async function apiRequest<T>(path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
-  const response = await fetch(path, { method: body === undefined ? 'GET' : 'POST', credentials: 'same-origin',
+  const response = await apiFetch(path, { method: body === undefined ? 'GET' : 'POST', credentials: 'same-origin',
     headers: body === undefined ? undefined : { 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body), signal });
   const data = await readJson<T & { success?: boolean; error?: { message?: string } }>(response);
   if (!response.ok || data.success === false) throw new Error(data.error?.message || '服务暂时无法连接，请重试。');

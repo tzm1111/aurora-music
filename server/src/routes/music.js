@@ -1,3 +1,5 @@
+import { hasSealedSessions, seal, unseal } from '../utils/sealedState.js';
+import { requirePlayerOrigin } from '../middleware/playerOrigin.js';
 // 音乐API路由
 // - 本地曲库：内置数据 + 后端合成音频
 // - 网易云：转发到本地 NeteaseCloudMusicApi（music-api/）
@@ -107,6 +109,19 @@ router.get('/search', async (req, res) => {
   }
 });
 
+// 分离部署的音频票据仅授权单首歌曲，不携带账号登录凭据。
+router.get('/playback/netease/:id', requirePlayerOrigin, async (req, res) => {
+  const { id } = req.params;
+  if (!/^\d+$/.test(id)) return res.status(400).json({ success: false, error: { message: '非法的歌曲 ID' } });
+  if (!hasSealedSessions()) return res.status(503).json({ success: false, error: { message: '分离部署会话未配置' } });
+  try {
+    const url = await netease.getStreamUrl(id, musicCookie(req));
+    const ticket = seal({ id, url, expires: Date.now() + 5 * 60 * 1000 }, 'aurora-media');
+    res.set('Cache-Control', 'no-store');
+    res.json({ success: true, src: `/api/music/stream/netease/${id}?ticket=${encodeURIComponent(ticket)}` });
+  } catch { res.status(502).json({ success: false, error: { message: '当前歌曲音源不可用，请重试或换一首。' } }); }
+});
+
 /**
  * GET /api/music/stream/netease/:id
  * 网易云音频流代理：解决跨域与直链过期问题，支持 Range 请求
@@ -125,7 +140,9 @@ router.get('/stream/netease/:id', async (req, res) => {
   res.on('close', () => controller.abort());
 
   try {
-    const url = await netease.getStreamUrl(id, musicCookie(req));
+    const media = req.query.ticket ? unseal(req.query.ticket, 'aurora-media') : null;
+    if (req.query.ticket && (!media || media.id !== id)) return res.status(403).end();
+    const url = media?.url || await netease.getStreamUrl(id, musicCookie(req));
     const headers = {};
     if (req.headers.range) headers.Range = req.headers.range;
 

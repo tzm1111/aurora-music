@@ -1,6 +1,7 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { usePlayer, useCurrentTrack } from '../store/usePlayer';
 import { connectAudioElement, resumeContext } from '../lib/audioVisualizer';
+import { API_BASE, resolveAudioSource } from '../services/api';
 import { generateDemoTrack, trackIdToSeed } from '../lib/demoAudio';
 
 const synthCache = new Map<string, string>();
@@ -43,6 +44,18 @@ export function AudioEngine() {
     usePlayer.setState({ isPlaying: false, playbackStatus: 'error', audioError: message });
   }, []);
 
+  const startPlayback = useCallback(() => {
+    const el = audioRef.current;
+    if (!el || !el.getAttribute('src') || !usePlayer.getState().isPlaying) return;
+    const ticket = generation.current;
+    usePlayer.setState({ playbackStatus: 'loading' });
+    try { connectAudioElement(el); resumeContext(); } catch { /* 不支持频谱时仍可播放 */ }
+    el.play().catch(error => {
+      if (ticket !== generation.current || error.name === 'AbortError' || !usePlayer.getState().isPlaying) return;
+      usePlayer.setState({ isPlaying: false, playbackStatus: 'error', audioError: error.name === 'NotAllowedError' ? '浏览器暂未允许播放，请点击重试。' : '无法开始播放，请检查音频或网络后重试。' });
+    });
+  }, []);
+
   useEffect(() => {
     const el = audioRef.current;
     if (!el || !libraryReady) return;
@@ -59,26 +72,27 @@ export function AudioEngine() {
       usePlayer.setState({ isPlaying: false, playbackStatus: 'error', audioError: '这首歌还没有音频文件，请重新导入或搜索原曲。' });
       el.removeAttribute('src'); el.load(); return;
     }
+    const ticket = generation.current;
+    const ctrl = new AbortController();
+    el.pause(); el.removeAttribute('src'); el.load();
     restoringPosition.current = true;
-    el.src = url;
-    el.load();
     usePlayer.setState({ duration: 0 });
-  }, [trackId, trackSrc, trackDuration, isDemo, playRequest, libraryReady]);
+    if (API_BASE && url.startsWith('/api/')) {
+      el.crossOrigin = 'anonymous';
+      resolveAudioSource(url, ctrl.signal).then(src => {
+        if (ctrl.signal.aborted || ticket !== generation.current) return;
+        el.src = src; el.load(); startPlayback();
+      }).catch(error => { if (!ctrl.signal.aborted) failPlayback(error.message || '音频连接失败'); });
+    } else { el.src = url; el.load(); }
+    return () => ctrl.abort();
+  }, [trackId, trackSrc, trackDuration, isDemo, playRequest, libraryReady, startPlayback, failPlayback]);
 
   useEffect(() => {
     const el = audioRef.current;
     if (!el || !trackId || !libraryReady || !el.getAttribute('src')) return;
     if (!isPlaying) { el.pause(); return; }
-    const ticket = generation.current;
-    usePlayer.setState({ playbackStatus: 'loading' });
-    try { connectAudioElement(el); resumeContext(); } catch { /* 不支持频谱时仍可播放 */ }
-    el.play().catch(error => {
-      if (ticket !== generation.current || error.name === 'AbortError' || !usePlayer.getState().isPlaying) return;
-      usePlayer.setState({ isPlaying: false, playbackStatus: 'error', audioError: error.name === 'NotAllowedError'
-        ? '浏览器暂未允许播放，请点击重试。'
-        : '无法开始播放，请检查音频或网络后重试。' });
-    });
-  }, [isPlaying, trackId, trackSrc, playRequest, libraryReady]);
+    startPlayback();
+  }, [isPlaying, trackId, trackSrc, playRequest, libraryReady, startPlayback]);
 
   useEffect(() => { if (audioRef.current) audioRef.current.volume = volume; }, [volume]);
   useEffect(() => {

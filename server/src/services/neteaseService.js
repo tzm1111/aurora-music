@@ -1,4 +1,7 @@
 import { createHash } from 'node:crypto';
+import { createRequire } from 'node:module';
+const require = createRequire(import.meta.url);
+let embeddedApi;
 // 网易云音乐 provider
 // 依赖本地运行的 NeteaseCloudMusicApi（见 aurora-music/music-api）
 // 只暴露：搜索、播放地址解析、健康检查
@@ -15,6 +18,18 @@ function baseUrl() {
 }
 
 async function apiGet(path, params = {}, timeoutMs = 8000, cookie = '', allowedCodes = [200]) {
+  if (process.env.NETEASE_EMBEDDED === '1') {
+    embeddedApi ||= require('../../../music-api/node_modules/NeteaseCloudMusicApi/main.js');
+    const method = { '/cloudsearch': 'cloudsearch', '/search': 'search', '/song/url/v1': 'song_url_v1', '/song/url': 'song_url', '/login/qr/key': 'login_qr_key', '/login/qr/create': 'login_qr_create', '/login/qr/check': 'login_qr_check', '/login/status': 'login_status' }[path];
+    if (!method) throw new Error('不支持的音乐接口');
+    let timer;
+    try {
+      const result = await Promise.race([embeddedApi[method]({ ...params, cookie }), new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('音乐接口超时')), timeoutMs); })]);
+      const json = result.body;
+      if (result.status >= 400 || (json.code && !allowedCodes.includes(json.code))) throw new Error(json.message || json.msg || '音乐接口暂时不可用');
+      return json;
+    } finally { clearTimeout(timer); }
+  }
   const url = new URL(path, baseUrl() + '/');
   for (const [k, v] of Object.entries(params)) {
     if (v !== undefined && v !== null && v !== '') url.searchParams.set(k, String(v));

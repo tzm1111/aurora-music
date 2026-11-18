@@ -51,6 +51,6 @@ export function AccountDialog({ account, onChange, onClose }: { account: Account
       <p role="status" className="connection-note">{status || '无需输入密码，由你在网易云 App 中确认。'}</p>
       <button className="dj-start" disabled={busy} onClick={createQR}><RefreshCw size={16}/>{image ? '刷新二维码' : '生成登录二维码'}</button>
     </>}
-    <p className="connection-note">登录凭据只在本机后端会话中使用，页面不保存网易云 Cookie。后端重启或会话到期后需重新连接。</p>
+    <p className="connection-note">登录信息由后端加密保护，页面不明文保存网易云 Cookie。会话到期后需重新连接。</p>
   </Dialog>;
 }

@@ -134,3 +134,9 @@ npm run dev         # 前端，端口 5173（/api 已代理到 3001）
 魔搭创空间提供免费 CPU 资源，Docker SDK 需要绑定已实名的阿里云账号。创建编程式空间时选择 Docker SDK 和免费 CPU 资源，把 `deploy/modelscope/Dockerfile` 上传为空间根目录的 `Dockerfile`，再在设置中点击上线。
 
 该部署文件从公开 GitHub 仓库下载固定的已验证提交，构建完整网页与后端，监听魔搭要求的 `0.0.0.0:7860`；内部音乐接口使用 3100 端口，不占用平台保留的 8080 端口。后续升级需要更新文件中的提交编号并重新上线。参考文档：https://modelscope.cn/docs/studios/docker 。
+
+### GitHub Pages + Vercel
+
+GitHub Pages 部署完整播放器前端，Vercel Hobby 运行 `api/index.js` 中的 Express 后端。音乐 API 通过 npm 模块直接调用，无需常驻第二个进程。Vercel 设置 `PLAYER_ORIGINS=https://tzm1111.github.io`，并配置仅在服务器保存的 `AURORA_SESSION_SECRET`（64 位十六进制随机值）。GitHub 仓库变量 `AURORA_API_URL` 填入实际 Vercel HTTPS 域名，Pages 使用 GitHub Actions 发布。
+
+跨站登录使用服务器加密会话凭证；前端仅在 sessionStorage 保存不可解读的凭证，网易云 Cookie 和模型 Key 不明文写入浏览器。音频采用仅授权单首歌曲的短期票据，支持频谱和进度拖动。会话到期、后端密钥变更或浏览器会话结束后需要重新连接账号/模型。

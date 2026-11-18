@@ -1,0 +1,14 @@
+{
+  "installCommand": "npm ci && npm --prefix server ci --omit=dev && npm --prefix music-api ci --omit=dev",
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "functions": {
+    "api/index.js": {
+      "maxDuration": 60,
+      "includeFiles": "music-api/node_modules/NeteaseCloudMusicApi/**"
+    }
+  },
+  "rewrites": [
+    { "source": "/api/:path*", "destination": "/api/index" }
+  ]
+}

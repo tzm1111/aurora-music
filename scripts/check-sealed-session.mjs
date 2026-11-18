@@ -1,0 +1,26 @@
+import assert from 'node:assert/strict';
+import { randomBytes } from 'node:crypto';
+import { seal, unseal } from '../server/src/utils/sealedState.js';
+import { getMusicSession, persistMusicSession } from '../server/src/services/neteaseSession.js';
+process.env.AURORA_SESSION_SECRET = randomBytes(32).toString('hex');
+const original = { id: 'test', cookie: 'private-test-cookie', expires: Date.now() + 60000 };
+const token = seal(original, 'aurora-session');
+assert.deepEqual(unseal(token, 'aurora-session'), original);
+assert.equal(unseal(token, 'aurora-media'), null);
+assert.equal(unseal(token.slice(0, -8), 'aurora-session'), null);
+assert.equal(unseal(seal({ expires: Date.now() - 1 }, 'aurora-session'), 'aurora-session'), null);
+assert.equal(Buffer.from(token, 'base64url').includes(Buffer.from(original.cookie)), false);
+const req = { headers: { 'x-aurora-session': token } };
+const headers = {};
+const res = { set: (key, value) => { headers[key] = value; }, cookie: () => {}, json: body => body };
+persistMusicSession(req, res, () => {});
+getMusicSession(req).cookie = 'updated-test-cookie';
+res.json({ success: true });
+assert.equal(unseal(headers['X-Aurora-Session'], 'aurora-session').cookie, 'updated-test-cookie');
+// 模拟另外一台实例，不依赖原实例的内存表。
+assert.equal(getMusicSession({ headers: { 'x-aurora-session': headers['X-Aurora-Session'] } }).cookie, 'updated-test-cookie');
+const cookieReq = { headers: { cookie: 'aurora_session=' + headers['X-Aurora-Session'] } };
+assert.equal(getMusicSession(cookieReq).cookie, 'updated-test-cookie');
+process.env.AURORA_SESSION_SECRET = randomBytes(32).toString('hex');
+assert.equal(unseal(token, 'aurora-session'), null);
+console.log('通过：加密会话、篡改与过期拒绝、用途隔离、实例切换与 Cookie 兼容。');
