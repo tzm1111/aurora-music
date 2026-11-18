@@ -7,10 +7,10 @@
 - **情绪 / 天气推荐**：7 种心情标签 + 天气、时段上下文，本地打分算法给出歌单
 - **网易云音源**：搜索歌名 / 歌手 / 专辑，直接播放真实音频（后端代理流式传输，支持拖动进度条）
 - **本地合成音源**：无网络时仍可播放内置曲目，音频由 Web Audio API 实时合成
-- **AI 聊天 DJ**：右侧对话面板，未配置 LLM 时走本地降级回复
-- **播放器**：播放 / 暂停、切歌、进度、音量、随机 / 单曲循环
+- **AI 聊天 DJ**：点顶栏气泡按钮从右侧滑出，未配置 LLM 时走本地降级回复
+- **播放器**：底部悬浮玻璃迷你条，点开是全屏 Now Playing（圆形封面 + 实时频谱环 + 波形进度条），封面色驱动全场 mesh 渐变背景，换歌 1.2 秒平滑过渡
 - **发现页**：径向频谱、粒子、滚动歌词，支持全屏沉浸
-- **封面取色**：从当前封面提取主色调，动态驱动全局 CSS 变量
+- **封面取色**：从当前封面提取主色调，驱动全场 mesh 渐变背景与强调色
 - **文字歌单 / MP3 / LRC 导入**
 
 快捷键：`Space` 播放暂停 · `←/→` 切歌 · `↑/↓` 音量 · `F` 沉浸 · `D` 切换首页/发现 · `Esc` 退出沉浸
@@ -24,7 +24,7 @@ React 19 · TypeScript · Zustand · Vite 8 · Express 5 · NeteaseCloudMusicApi
 ```
 aurora-music/
 ├── src/                    # 前端
-│   ├── components/         # Sidebar / MainView / Discover / ChatPanel / PlayerBar / AudioEngine
+│   ├── components/         # MainView / Discover / ChatPanel / MiniBar / NowPlaying / MeshBackground / SpectrumRing / WaveformBar / Sidebar / AudioEngine
 │   ├── store/usePlayer.ts  # 全局播放状态
 │   ├── lib/                # 合成音频、推荐算法、取色、歌词、可视化
 │   └── services/api.ts     # 后端请求封装
@@ -62,7 +62,7 @@ npm run dev         # 前端，端口 5173（/api 已代理到 3001）
 | 变量 | 说明 |
 | --- | --- |
 | `NETEASE_COOKIE` | 自己的网易云 `MUSIC_U`，用于播放账号有权限的会员歌曲 |
-| `LLM_PROVIDER` / `OPENAI_API_KEY` / `CLAUDE_API_KEY` | 启用真实大模型推荐与聊天，未配置时走本地降级 |
+| `LLM_PROVIDER` / `OPENAI_API_KEY` / `CLAUDE_API_KEY` / `DEEPSEEK_API_KEY` / `GEMINI_API_KEY` | 启用真实大模型推荐与聊天（deepseek 需先充值，gemini 有免费额度），未配置时走本地降级 |
 | `WEATHER_API_KEY` | 接入 OpenWeatherMap，未配置时使用模拟天气 |
 
 ## API

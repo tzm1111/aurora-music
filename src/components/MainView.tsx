@@ -7,14 +7,14 @@ import { TRACKS } from '../data/tracks';
 import { fetchProviders, searchTracks } from '../services/api';
 import type { ProviderId, ProviderStatus } from '../services/api';
 
-const MOODS: { key: Mood; label: string; emoji: string }[] = [
-  { key: 'happy',     label: '开心',     emoji: '😄' },
-  { key: 'chill',     label: '放松',     emoji: '🌿' },
-  { key: 'focus',     label: '专注',     emoji: '🎯' },
-  { key: 'sad',       label: '忧郁',     emoji: '🌧️' },
-  { key: 'energetic', label: '充电',     emoji: '⚡' },
-  { key: 'romantic',  label: '浪漫',     emoji: '💞' },
-  { key: 'sleepy',    label: '助眠',     emoji: '🌙' },
+const MOODS: { key: Mood; label: string }[] = [
+  { key: 'happy',     label: '开心' },
+  { key: 'chill',     label: '放松' },
+  { key: 'focus',     label: '专注' },
+  { key: 'sad',       label: '忧郁' },
+  { key: 'energetic', label: '充电' },
+  { key: 'romantic',  label: '浪漫' },
+  { key: 'sleepy',    label: '助眠' },
 ];
 
 const WEATHER_ICON: Record<Weather, React.ReactNode> = {
@@ -41,7 +41,6 @@ export function MainView() {
   const setWeather = usePlayer(s => s.setWeather);
   const city = usePlayer(s => s.city);
   const temp = usePlayer(s => s.temperatureC);
-  const playTrack = usePlayer(s => s.playTrack);
   const importedTracks = usePlayer(s => s.importedTracks);
   const registerRemoteTracks = usePlayer(s => s.registerRemoteTracks);
 
@@ -175,7 +174,7 @@ export function MainView() {
             className={`mood-chip ${mood === m.key ? 'active' : ''}`}
             onClick={() => setMood(m.key)}
           >
-            <span style={{marginRight: 6}}>{m.emoji}</span>{m.label}
+            {m.label}
           </button>
         ))}
       </div>
@@ -244,19 +243,7 @@ export function MainView() {
                     标 VIP 的歌曲在未登录状态下为 30 秒试听；有自己的会员账号可在 <code>server/.env</code> 配置 <code>NETEASE_COOKIE</code>
                   </div>
                 )}
-                <div className="track-grid">
-                  {remote.map(t => (
-                    <div key={t.id} className="track-card" onClick={() => playTrack(t.id, remote.map(r => r.id))}>
-                      <div className="cover">
-                        <img src={t.cover} alt={t.title} loading="lazy" />
-                        {t.vip && <span className="vip-badge">VIP</span>}
-                        <div className="play-fab"><Play size={16} fill="currentColor"/></div>
-                      </div>
-                      <div className="title">{t.title}</div>
-                      <div className="artist">{t.artist}</div>
-                    </div>
-                  ))}
-                </div>
+                <TrackList tracks={remote} queue={remote.map(r => r.id)} />
               </>
             ) : (
               <div className="empty-tip">
@@ -271,18 +258,7 @@ export function MainView() {
               <span className="more">{filtered.length} 首匹配「{query}」</span>
             </div>
             {filtered.length ? (
-              <div className="track-grid">
-                {filtered.map(t => (
-                  <div key={t.id} className="track-card" onClick={() => playTrack(t.id, filtered.map(r => r.id))}>
-                    <div className="cover">
-                      <img src={t.cover} alt={t.title} loading="lazy" />
-                      <div className="play-fab"><Play size={16} fill="currentColor"/></div>
-                    </div>
-                    <div className="title">{t.title}</div>
-                    <div className="artist">{t.artist}{t.region ? ' · ' + t.region : ''}</div>
-                  </div>
-                ))}
-              </div>
+              <TrackList tracks={filtered} queue={filtered.map(r => r.id)} />
             ) : (
               <div className="empty-tip">没有匹配项，换个词试试？</div>
             )}
@@ -294,38 +270,46 @@ export function MainView() {
             <h2>为你推荐</h2>
             <span className="more">基于天气 + 心情 智能挑选</span>
           </div>
-          <div className="track-grid">
-            {recommended.map(t => (
-              <div key={t.id} className="track-card" onClick={() => playTrack(t.id, recommended.map(r => r.id))}>
-                <div className="cover">
-                  <img src={t.cover} alt={t.title} loading="lazy" />
-                  <div className="play-fab"><Play size={16} fill="currentColor"/></div>
-                </div>
-                <div className="title">{t.title}</div>
-                <div className="artist">{t.artist}</div>
-              </div>
-            ))}
-          </div>
+          <TrackList tracks={recommended} queue={recommended.map(r => r.id)} />
 
           <div className="section-h">
             <h2>全部曲库</h2>
             <span className="more">共 {allTracks.length} 首 · 含本地导入</span>
           </div>
-          <div className="track-grid">
-            {allTracks.map(t => (
-              <div key={t.id} className="track-card" onClick={() => playTrack(t.id, allTracks.map(x => x.id))}>
-                <div className="cover">
-                  <img src={t.cover} alt={t.title} loading="lazy" />
-                  <div className="play-fab"><Play size={16} fill="currentColor"/></div>
-                </div>
-                <div className="title">{t.title}</div>
-                <div className="artist">{t.artist}{t.region ? ' · ' + t.region : ''}</div>
-              </div>
-            ))}
-          </div>
+          <TrackList tracks={allTracks} queue={allTracks.map(x => x.id)} />
         </>
       )}
     </main>
+  );
+}
+
+function fmtDuration(sec: number): string {
+  if (!sec || sec <= 0) return '';
+  return `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, '0')}`;
+}
+
+/** 简洁列表：一行一首，小封面 + 标题/歌手 + 时长，悬停显示播放 */
+function TrackList({ tracks, queue }: { tracks: Track[]; queue: string[] }) {
+  const playTrack = usePlayer(s => s.playTrack);
+  return (
+    <div className="track-list">
+      {tracks.map(t => (
+        <div key={t.id} className="track-row" onClick={() => playTrack(t.id, queue)}>
+          <div className="thumb">
+            <img src={t.cover} alt="" loading="lazy" />
+            <span className="row-play"><Play size={14} fill="currentColor" /></span>
+          </div>
+          <div className="row-meta">
+            <div className="row-title">
+              {t.title}
+              {t.vip && <span className="vip-badge">VIP</span>}
+            </div>
+            <div className="row-artist">{t.artist}{t.region ? ' · ' + t.region : ''}</div>
+          </div>
+          {t.duration > 0 && <span className="row-dur">{fmtDuration(t.duration)}</span>}
+        </div>
+      ))}
+    </div>
   );
 }
 

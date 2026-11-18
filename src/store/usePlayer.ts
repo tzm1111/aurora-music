@@ -1,11 +1,17 @@
 import { create } from 'zustand';
 import type { Mood, Weather, Track, ChatMessage, LyricLine } from '../types';
+import type { ExtractedPalette } from '../lib/colorExtract';
 import { TRACKS, trackById } from '../data/tracks';
 
 type PlayerState = {
   // ui
   view: 'home' | 'discover';
   immersive: boolean;
+  chatOpen: boolean;
+  nowPlayingOpen: boolean;
+  navOpen: boolean;
+  // 当前封面取色快照（mesh 背景交叉淡入用）
+  palette: ExtractedPalette | null;
 
   // queue
   queue: string[];        // track ids
@@ -53,12 +59,20 @@ type PlayerState = {
   setAudioError: (msg: string | null) => void;
   setView: (v: 'home' | 'discover') => void;
   setImmersive: (v: boolean) => void;
+  setChatOpen: (v: boolean) => void;
+  setNowPlayingOpen: (v: boolean) => void;
+  setNavOpen: (v: boolean) => void;
+  setPalette: (p: ExtractedPalette | null) => void;
   setLyrics: (trackId: string, lines: LyricLine[]) => void;
 };
 
 export const usePlayer = create<PlayerState>((set, get) => ({
   view: 'home',
   immersive: false,
+  chatOpen: false,
+  nowPlayingOpen: false,
+  navOpen: false,
+  palette: null,
   queue: TRACKS.map(t => t.id),
   currentIndex: -1,
   isPlaying: false,
@@ -132,6 +146,10 @@ export const usePlayer = create<PlayerState>((set, get) => ({
   setAudioError: (msg) => set({ audioError: msg }),
   setView: (v) => set({ view: v }),
   setImmersive: (v) => set({ immersive: v }),
+  setChatOpen: (v) => set({ chatOpen: v }),
+  setNowPlayingOpen: (v) => set({ nowPlayingOpen: v }),
+  setNavOpen: (v) => set({ navOpen: v }),
+  setPalette: (p) => set({ palette: p }),
   setLyrics: (trackId, lines) =>
     set(s => ({ customLyrics: { ...s.customLyrics, [trackId]: lines } })),
 }));

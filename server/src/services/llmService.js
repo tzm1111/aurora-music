@@ -1,5 +1,7 @@
-// LLM调用服务 - 支持OpenAI和Claude
+// LLM调用服务 - 支持OpenAI、DeepSeek、Gemini和Claude
 import axios from 'axios';
+import { callDeepSeekHelper } from '../utils/deepseekHelper.js';
+import { callGeminiHelper } from '../utils/geminiHelper.js';
 
 const LLM_PROVIDER = process.env.LLM_PROVIDER || 'disabled';
 
@@ -21,6 +23,10 @@ export async function callLLM(mood, weather, scene) {
     let response;
     if (LLM_PROVIDER === 'openai') {
       response = await callOpenAI(prompt);
+    } else if (LLM_PROVIDER === 'deepseek') {
+      response = await callDeepSeek(prompt);
+    } else if (LLM_PROVIDER === 'gemini') {
+      response = await callGemini(prompt);
     } else if (LLM_PROVIDER === 'claude') {
       response = await callClaude(prompt);
     } else {
@@ -75,18 +81,17 @@ function buildLLMPrompt(mood, weather, scene) {
 }
 
 /**
- * 调用OpenAI API
+ * 调用OpenAI兼容接口（OpenAI / DeepSeek共用）
  */
-async function callOpenAI(prompt) {
-  const apiKey = process.env.OPENAI_API_KEY;
+async function callOpenAICompatible(prompt, { baseUrl, apiKey, model }) {
   if (!apiKey) {
-    throw new Error('OPENAI_API_KEY未配置');
+    throw new Error('API key未配置');
   }
 
   const response = await axios.post(
-    'https://api.openai.com/v1/chat/completions',
+    `${baseUrl}/chat/completions`,
     {
-      model: process.env.OPENAI_MODEL || 'gpt-3.5-turbo',
+      model,
       messages: [
         {
           role: 'system',
@@ -110,6 +115,75 @@ async function callOpenAI(prompt) {
   );
 
   return response.data.choices[0].message.content;
+}
+
+/**
+ * 调用OpenAI API
+ */
+async function callOpenAI(prompt) {
+  return callOpenAICompatible(prompt, {
+    baseUrl: 'https://api.openai.com/v1',
+    apiKey: process.env.OPENAI_API_KEY,
+    model: process.env.OPENAI_MODEL || 'gpt-3.5-turbo',
+  });
+}
+
+/**
+ * 调用DeepSeek API：.env里配了key就直连，否则经由vault key helper（本机）
+ */
+async function callDeepSeek(prompt) {
+  const messages = [
+    {
+      role: 'system',
+      content: '你是一个专业的音乐推荐AI助手。你擅长根据用户的心情和场景推荐合适的音乐。',
+    },
+    {
+      role: 'user',
+      content: prompt,
+    },
+  ];
+  if (process.env.DEEPSEEK_API_KEY) {
+    return callOpenAICompatible(prompt, {
+      baseUrl: 'https://api.deepseek.com/v1',
+      apiKey: process.env.DEEPSEEK_API_KEY,
+      model: process.env.DEEPSEEK_MODEL || 'deepseek-chat',
+    });
+  }
+  return callDeepSeekHelper({
+    model: process.env.DEEPSEEK_MODEL || 'deepseek-chat',
+    messages,
+    temperature: 0.7,
+    maxTokens: 1500,
+  });
+}
+
+/**
+ * 调用Gemini API：.env里配了key就直连，否则经由vault key helper（本机）
+ */
+async function callGemini(prompt) {
+  const messages = [
+    {
+      role: 'system',
+      content: '你是一个专业的音乐推荐AI助手。你擅长根据用户的心情和场景推荐合适的音乐。',
+    },
+    {
+      role: 'user',
+      content: prompt,
+    },
+  ];
+  if (process.env.GEMINI_API_KEY) {
+    return callOpenAICompatible(prompt, {
+      baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+      apiKey: process.env.GEMINI_API_KEY,
+      model: process.env.GEMINI_MODEL || 'gemini-3.8-flash',
+    });
+  }
+  return callGeminiHelper({
+    model: process.env.GEMINI_MODEL || 'gemini-3.8-flash',
+    messages,
+    temperature: 0.7,
+    maxTokens: 1500,
+  });
 }
 
 /**

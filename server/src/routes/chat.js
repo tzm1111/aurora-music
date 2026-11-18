@@ -1,6 +1,8 @@
 // AI聊天API路由
 import { Router } from 'express';
 import axios from 'axios';
+import { callDeepSeekHelper } from '../utils/deepseekHelper.js';
+import { callGeminiHelper } from '../utils/geminiHelper.js';
 
 const router = Router();
 
@@ -48,6 +50,74 @@ router.post('/', async (req, res) => {
 });
 
 /**
+ * 调用DeepSeek进行聊天：.env里配了key就直连，否则经由vault key helper（本机）
+ */
+async function callDeepSeekChat(prompt) {
+  const messages = [
+    { role: 'system', content: '你是一个AI音乐电台DJ助手，友好、有个性、热爱音乐。' },
+    { role: 'user', content: prompt },
+  ];
+  if (process.env.DEEPSEEK_API_KEY) {
+    const response = await axios.post(
+      'https://api.deepseek.com/v1/chat/completions',
+      {
+        model: process.env.DEEPSEEK_MODEL || 'deepseek-chat',
+        messages,
+        temperature: 0.8,
+        max_tokens: 200,
+      },
+      {
+        headers: {
+          'Authorization': `Bearer ${process.env.DEEPSEEK_API_KEY}`,
+        },
+        timeout: 5000,
+      }
+    );
+    return response.data.choices[0].message.content;
+  }
+  return callDeepSeekHelper({
+    model: process.env.DEEPSEEK_MODEL || 'deepseek-chat',
+    messages,
+    temperature: 0.8,
+    maxTokens: 200,
+  });
+}
+
+/**
+ * 调用Gemini进行聊天：.env里配了key就直连，否则经由vault key helper（本机）
+ */
+async function callGeminiChat(prompt) {
+  const messages = [
+    { role: 'system', content: '你是一个AI音乐电台DJ助手，友好、有个性、热爱音乐。' },
+    { role: 'user', content: prompt },
+  ];
+  if (process.env.GEMINI_API_KEY) {
+    const response = await axios.post(
+      'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
+      {
+        model: process.env.GEMINI_MODEL || 'gemini-3.8-flash',
+        messages,
+        temperature: 0.8,
+        max_tokens: 200,
+      },
+      {
+        headers: {
+          'Authorization': `Bearer ${process.env.GEMINI_API_KEY}`,
+        },
+        timeout: 5000,
+      }
+    );
+    return response.data.choices[0].message.content;
+  }
+  return callGeminiHelper({
+    model: process.env.GEMINI_MODEL || 'gemini-3.8-flash',
+    messages,
+    temperature: 0.8,
+    maxTokens: 200,
+  });
+}
+
+/**
  * 调用LLM进行聊天
  */
 async function callLLMForChat(message, context) {
@@ -84,6 +154,10 @@ ${context ? `上下文：${context}` : ''}
         }
       );
       return response.data.choices[0].message.content;
+    } else if (process.env.LLM_PROVIDER === 'deepseek') {
+      return callDeepSeekChat(prompt);
+    } else if (process.env.LLM_PROVIDER === 'gemini') {
+      return callGeminiChat(prompt);
     } else if (process.env.LLM_PROVIDER === 'claude') {
       response = await axios.post(
         'https://api.anthropic.com/v1/messages',

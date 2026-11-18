@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Send, Sparkles } from 'lucide-react';
+import { Send, Sparkles, X } from 'lucide-react';
 import { usePlayer } from '../store/usePlayer';
 import { recommendByText } from '../lib/recommend';
 import { trackById } from '../data/tracks';
@@ -18,6 +18,7 @@ export function ChatPanel() {
   const messages = usePlayer(s => s.messages);
   const push = usePlayer(s => s.pushMessage);
   const playTrack = usePlayer(s => s.playTrack);
+  const setChatOpen = usePlayer(s => s.setChatOpen);
   const [text, setText] = useState('');
   const bodyRef = useRef<HTMLDivElement>(null);
 
@@ -61,6 +62,9 @@ export function ChatPanel() {
       <div className="chat-head">
         <span className="ai-dot"/>
         <Sparkles size={16}/> Aurora · 你的音乐伙伴
+        <button className="chat-close" onClick={() => setChatOpen(false)} title="收起">
+          <X size={16} />
+        </button>
       </div>
 
       <div className="chat-body" ref={bodyRef}>
