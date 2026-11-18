@@ -128,3 +128,9 @@ npm run dev         # 前端，端口 5173（/api 已代理到 3001）
 - 不要把本地 `.env` 上传到仓库或镜像；Docker 构建已排除环境文件。
 
 本地生产验证：`npm run test:deployment`。完整生产启动：先安装三处依赖并构建网页，再执行 `NODE_ENV=production HOST=127.0.0.1 npm start`；需确保内部端口 3100 未被其他进程使用。
+
+## 魔搭创空间 Docker 部署
+
+魔搭创空间提供免费 CPU 资源，Docker SDK 需要绑定已实名的阿里云账号。创建编程式空间时选择 Docker SDK 和免费 CPU 资源，把 `deploy/modelscope/Dockerfile` 上传为空间根目录的 `Dockerfile`，再在设置中点击上线。
+
+该部署文件从公开 GitHub 仓库下载固定的已验证提交，构建完整网页与后端，监听魔搭要求的 `0.0.0.0:7860`；内部音乐接口使用 3100 端口，不占用平台保留的 8080 端口。后续升级需要更新文件中的提交编号并重新上线。参考文档：https://modelscope.cn/docs/studios/docker 。
