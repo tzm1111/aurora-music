@@ -11,6 +11,17 @@ concurrency:
   group: pages
   cancel-in-progress: true
 jobs:
+  verify-backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify deployed music backend
+        env:
+          AURORA_API_URL: ${{ vars.AURORA_API_URL }}
+        run: node scripts/check-remote-backend.mjs
   build:
     runs-on: ubuntu-latest
     steps:
