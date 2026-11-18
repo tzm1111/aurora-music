@@ -2,13 +2,13 @@ import { Router } from 'express';
 import { createDJSet } from '../services/djEngine.js';
 import { djModelStatus, callDJPlan } from '../services/llmService.js';
 import { musicCookie, getMusicSession } from '../services/neteaseSession.js';
+import { requirePlayerOrigin } from '../middleware/playerOrigin.js';
 const router = Router();
 router.use((req, res, next) => {
   res.set('Cache-Control', 'no-store');
-  const origin = req.headers.origin;
-  if (origin && !['http://127.0.0.1:5173', 'http://localhost:5173', `http://${req.headers.host}`].includes(origin)) return res.status(403).json({ success: false, error: { message: '请从播放器页面操作' } });
   next();
 });
+router.use(requirePlayerOrigin);
 router.post('/model', async (req, res) => {
   const { provider, apiKey, model } = req.body || {};
   if (!['openai', 'deepseek', 'gemini', 'claude'].includes(provider) || typeof apiKey !== 'string' || apiKey.length < 10 || apiKey.length > 512 || (model && (typeof model !== 'string' || model.length > 100))) return res.status(400).json({ success: false, error: { message: '请选择模型，并填写有效的 API Key。' } });

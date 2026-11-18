@@ -1,6 +1,8 @@
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
 import { recommendRouter } from './routes/recommend.js';
 import { musicRouter } from './routes/music.js';
 import { weatherRouter } from './routes/weather.js';
@@ -11,6 +13,7 @@ import { djRouter } from './routes/dj.js';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+if (process.env.NODE_ENV === 'production') app.set('trust proxy', 1);
 
 // 中间件
 app.use(cors({ origin: ['http://127.0.0.1:5173', 'http://localhost:5173'], credentials: true }));
@@ -39,6 +42,16 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+// 生产环境由同一个服务提供网页与 API，账号 Cookie 保持同源。
+if (process.env.SERVE_STATIC === '1') {
+  const dist = fileURLToPath(new URL('../../dist/', import.meta.url));
+  app.use(express.static(dist, { index: false }));
+  app.get('/{*page}', (req, res, next) => {
+    if (req.path.startsWith('/api/') || path.extname(req.path)) return next();
+    res.sendFile(path.join(dist, 'index.html'));
+  });
+}
+
 // 全局错误处理
 app.use((err, req, res, next) => {
   console.error('Server Error:', err);
@@ -52,10 +65,11 @@ app.use((err, req, res, next) => {
 });
 
 // 启动服务器
-app.listen(PORT, '127.0.0.1', () => {
+const server = app.listen(PORT, process.env.HOST || '127.0.0.1', () => {
   console.log(`🎵 Aurora Music Server running on http://localhost:${PORT}`);
   console.log(`   LLM Provider: ${process.env.LLM_PROVIDER || 'disabled'}`);
   console.log(`   Environment: ${process.env.NODE_ENV || 'development'}`);
 });
+process.on('SIGTERM', () => server.close());
 
 export default app;

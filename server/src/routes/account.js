@@ -1,14 +1,13 @@
 import { Router } from 'express';
 import { getMusicSession } from '../services/neteaseSession.js';
 import { accountRequest } from '../services/neteaseService.js';
+import { requirePlayerOrigin } from '../middleware/playerOrigin.js';
 const router = Router();
 router.use((req, res, next) => {
   res.set('Cache-Control', 'no-store');
-  const origin = req.headers.origin;
-  const allowed = new Set(['http://127.0.0.1:5173', 'http://localhost:5173', `http://${req.headers.host}`]);
-  if (origin && !allowed.has(origin)) return res.status(403).json({ success: false, error: { message: '请从播放器页面操作账号' } });
   next();
 });
+router.use(requirePlayerOrigin);
 router.get('/status', (req, res) => {
   const session = getMusicSession(req);
   res.json({ success: true, loggedIn: Boolean(session?.cookie), profile: session?.profile || null });
