@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 // 网易云音乐 provider
 // 依赖本地运行的 NeteaseCloudMusicApi（见 aurora-music/music-api）
 // 只暴露：搜索、播放地址解析、健康检查
@@ -13,25 +14,17 @@ function baseUrl() {
   return (process.env.NETEASE_MUSIC_API_URL || DEFAULT_BASE_URL).replace(/\/+$/, '');
 }
 
-// 可选：配置自己的网易云 cookie（MUSIC_U）以播放有权限的会员歌曲
-// 不配置时匿名访问：普通歌曲完整播放，VIP 歌曲仅 30 秒试听
-function userCookie() {
-  return (process.env.NETEASE_COOKIE || '').trim();
-}
-
-async function apiGet(path, params = {}, timeoutMs = 8000) {
+async function apiGet(path, params = {}, timeoutMs = 8000, cookie = '', allowedCodes = [200]) {
   const url = new URL(path, baseUrl() + '/');
-  const cookie = userCookie();
-  if (cookie) url.searchParams.set('cookie', cookie);
   for (const [k, v] of Object.entries(params)) {
     if (v !== undefined && v !== null && v !== '') url.searchParams.set(k, String(v));
   }
-  const res = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
+  const res = await fetch(url, { headers: cookie ? { Cookie: cookie } : undefined, signal: AbortSignal.timeout(timeoutMs) });
   if (!res.ok) {
     throw new Error(`网易云 API 返回 HTTP ${res.status}`);
   }
   const json = await res.json();
-  if (json.code && json.code !== 200) {
+  if (json.code && !allowedCodes.includes(json.code)) {
     throw new Error(json.message || json.msg || `网易云 API 错误码 ${json.code}`);
   }
   return json;
@@ -67,8 +60,7 @@ function normalizeSong(song) {
     cover,
     src: `/api/music/stream/netease/${song.id}`,
     duration: Math.round(durationMs / 1000),
-    tags: ['CN'],
-    region: 'CN',
+    tags: [],
     vip: fee === 1 || fee === 4,
   };
 }
@@ -79,8 +71,8 @@ function normalizeSong(song) {
  * @param {number} limit
  * @returns {Promise<{tracks: Array, total: number}>}
  */
-export async function search(keywords, limit = 20) {
-  const json = await apiGet('/cloudsearch', { keywords, limit, type: 1 });
+export async function search(keywords, limit = 20, offset = 0, cookie = '') {
+  const json = await apiGet('/cloudsearch', { keywords, limit, offset, type: 1 }, 8000, cookie);
   const songs = json.result?.songs || [];
   return {
     tracks: songs.map(normalizeSong),
@@ -93,23 +85,36 @@ export async function search(keywords, limit = 20) {
  * @param {string|number} neteaseId
  * @returns {Promise<string>}
  */
-export async function getStreamUrl(neteaseId) {
-  const key = String(neteaseId);
-  const cached = urlCache.get(key);
+function cacheKey(id, cookie) {
+  return createHash('sha256').update(cookie || 'anonymous').digest('hex').slice(0, 24) + ':' + id;
+}
+function cacheAudio(item, cookie) {
+  if (!item?.url) return null;
+  const value = { url: item.url.replace(/^http:/, 'https:'), preview: Boolean(item.freeTrialInfo),
+    duration: Math.round((item.time || 0) / 1000), expiresAt: Date.now() + URL_TTL_MS };
+  urlCache.set(cacheKey(String(item.id), cookie), value);
+  if (urlCache.size > 500) urlCache.delete(urlCache.keys().next().value);
+  return value;
+}
+export async function getPlayability(ids, cookie = '') {
+  if (!ids.length) return new Map();
+  const safeIds = ids.map(String).filter(id => /^\d+$/.test(id)).slice(0, 30);
+  if (!safeIds.length) return new Map();
+  let json;
+  try { json = await apiGet('/song/url/v1', { id: safeIds.join(','), level: 'exhigh' }, 10000, cookie); }
+  catch { json = await apiGet('/song/url', { id: safeIds.join(','), br: 320000 }, 10000, cookie); }
+  return new Map((json.data || []).map(item => [String(item.id), cacheAudio(item, cookie)]));
+}
+export async function getStreamUrl(neteaseId, cookie = '') {
+  const cached = urlCache.get(cacheKey(String(neteaseId), cookie));
   if (cached && cached.expiresAt > Date.now()) return cached.url;
-
-  const json = await apiGet('/song/url', { id: key, br: 320000 }, 10000);
-  const item = Array.isArray(json.data) ? json.data[0] : null;
-
-  if (!item || !item.url) {
-    const err = new Error('该歌曲暂无可用音源（可能受版权或会员限制）');
-    err.code = 'NO_AUDIO';
-    throw err;
-  }
-
-  const url = item.url.replace(/^http:/, 'https:');
-  urlCache.set(key, { url, expiresAt: Date.now() + URL_TTL_MS });
-  return url;
+  const result = await getPlayability([neteaseId], cookie);
+  const item = result.get(String(neteaseId));
+  if (!item) { const error = new Error('当前账号没有可用音源，可能受版权或会员限制'); error.code = 'NO_AUDIO'; throw error; }
+  return item.url;
+}
+export function accountRequest(path, params = {}, cookie = '') {
+  return apiGet(path, params, 10000, cookie, [200, 800, 801, 802, 803]);
 }
 
 /**

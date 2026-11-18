@@ -25,8 +25,7 @@ const WEATHER_TAGS: Record<Weather, string[]> = {
  * 根据心情 + 天气推荐歌曲（内置曲库 + 导入歌曲）
  * 导入歌曲若无 tags，通过歌名/艺术家关键词智能推断心情
  */
-export function recommendByContext(mood: Mood, weather: Weather, limit = 8): Track[] {
-  const allTracks = [...TRACKS, ...usePlayer.getState().importedTracks];
+export function recommendByContext(mood: Mood, weather: Weather, limit = 8, allTracks: Track[] = [...TRACKS, ...usePlayer.getState().importedTracks]): Track[] {
   const tagWeights = new Map<string, number>();
   MOOD_TAGS[mood].forEach((t, i) => tagWeights.set(t, (tagWeights.get(t) ?? 0) + (5 - i)));
   WEATHER_TAGS[weather].forEach((t, i) => tagWeights.set(t, (tagWeights.get(t) ?? 0) + (4 - i)));

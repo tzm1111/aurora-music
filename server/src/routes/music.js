@@ -3,8 +3,10 @@
 // - 网易云：转发到本地 NeteaseCloudMusicApi（music-api/）
 import { Router } from 'express';
 import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 import { MUSIC_LIBRARY } from '../data/musicLibrary.js';
 import * as netease from '../services/neteaseService.js';
+import { musicCookie } from '../services/neteaseSession.js';
 
 const router = Router();
 
@@ -68,7 +70,7 @@ router.get('/search', async (req, res) => {
 
   if (source === 'netease') {
     try {
-      const { tracks, total } = await netease.search(query, limit);
+      const { tracks, total } = await netease.search(query, limit, Math.max(0, Number.parseInt(req.query.offset, 10) || 0), musicCookie(req));
       return res.json({ success: true, source: 'netease', tracks, total });
     } catch (error) {
       console.error('网易云搜索错误:', error);
@@ -123,7 +125,7 @@ router.get('/stream/netease/:id', async (req, res) => {
   res.on('close', () => controller.abort());
 
   try {
-    const url = await netease.getStreamUrl(id);
+    const url = await netease.getStreamUrl(id, musicCookie(req));
     const headers = {};
     if (req.headers.range) headers.Range = req.headers.range;
 
@@ -142,8 +144,9 @@ router.get('/stream/netease/:id', async (req, res) => {
     res.setHeader('Cache-Control', 'no-store');
 
     if (!upstream.body) return res.end();
-    Readable.fromWeb(upstream.body).pipe(res);
+    await pipeline(Readable.fromWeb(upstream.body), res);
   } catch (error) {
+    if (controller.signal.aborted || res.destroyed) return;
     if (error.name === 'AbortError') return res.end();
     console.error('音频流代理错误:', error);
     if (res.headersSent) return res.end();

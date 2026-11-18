@@ -1,14 +1,21 @@
 # Aurora Music · 极光音乐
 
-一个本地运行的 AI 音乐播放器：根据心情、天气或一段描述挑选歌曲，支持搜索与播放网易云音乐的真实曲目，界面为纯黑底 + 荧光强调色的极简风格。
+一个本地运行的专属 DJ 播放器：说一句当前心情，或点选场景，即可开始听歌。DJ 自动准备后续曲目，让用户少搜歌、多听歌；首页以极简深色界面和动态光球呈现。
 
 ## 功能
 
-- **情绪 / 天气推荐**：7 种心情标签 + 天气、时段上下文，本地打分算法给出歌单
+- **心情即开听**：一句话或放松、专注、提神、入睡快捷入口，先检查真实可播放音源，再自动开播
+- **专属 DJ 续播**：接近队列末尾时补充歌曲，排除最近推荐；播放中调整心情保留当前曲目与进度，更新后续队列
+- **作品去重与歌手分散**：合并同名作品的不同专辑、Live、Demo、重制与翻唱版本，优先完整音源与原版本；扩大场景歌手候选，优先每位歌手一首，不足时最多两首，不靠重复作品凑满。换一批、续播和再次推荐会排除近期作品；明确指定歌手时保留该偏好。已有 DJ 歌单展示与重播也应用去重
+- **DJ 推荐歌单**：首页展示当前与待播曲目，点击查看完整列表；每次成功推荐自动保存为有名称的历史歌单，首页“DJ 歌单”入口可查看与重播，最近 50 张保存在当前浏览器
+- **DJ 陪伴界面**：点击光球说话，拖动心情坐标选择轻柔 / 动感与沉静 / 明亮；光球随聆听、选歌和播放状态反馈，外侧三条倾斜行星轨道以不同周期运行。开始听后展示当前歌曲与后续推荐，手机端自动收紧陪伴区。后台与减少动态效果设置会暂停轨道动画
+- **语音输入**：点击 DJ 光球或语音入口，说出心情，识别文字后可编辑再发送。使用浏览器语音识别服务，需麦克风权限、浏览器支持与可用网络；不支持时显示提示，可继续打字
+- **当地天气与出行提示**：顶部独立状态条轮播天气、降雨与空气质量，点击展开小型位置面板；授权定位或手动选择城市 / 区县，查看出行建议。Open-Meteo 提供预报与 CAMS 空气数据，天气连接失败时使用 MET Norway 备用预报；AQI 明确采用 US AQI 口径。精确定位不保存，查询坐标取整到约 1 公里，空气数据缺失时明确提示
+- **真实模型连接**：界面连接 OpenAI、DeepSeek、Gemini 或 Claude；未连接或请求失败时明确标注场景推荐
+- **网易云扫码登录**：使用网易云 App 扫码确认，按账号与版权权限获取音源，优先完整歌曲并标注试听
 - **网易云音源**：搜索歌名 / 歌手 / 专辑，直接播放真实音频（后端代理流式传输，支持拖动进度条）
 - **本地合成音源**：无网络时仍可播放内置曲目，音频由 Web Audio API 实时合成
-- **AI 聊天 DJ**：点顶栏气泡按钮从右侧滑出，未配置 LLM 时走本地降级回复
-- **播放器**：底部悬浮玻璃迷你条，点开是全屏 Now Playing（圆形封面 + 实时频谱环 + 波形进度条），封面色驱动全场 mesh 渐变背景，换歌 1.2 秒平滑过渡
+- **播放器**：底部紧凑悬浮播放条支持喜欢，点开是全屏 Now Playing（圆形封面 + 实时频谱环 + 波形进度条），封面色驱动全场 mesh 渐变背景，换歌 1.2 秒平滑过渡；频谱按实际画布尺寸绘制，展开动画与高分屏下保持完整
 - **发现页**：径向频谱、粒子、滚动歌词，支持全屏沉浸
 - **封面取色**：从当前封面提取主色调，驱动全场 mesh 渐变背景与强调色
 - **文字歌单 / MP3 / LRC 导入**
@@ -24,13 +31,13 @@ React 19 · TypeScript · Zustand · Vite 8 · Express 5 · NeteaseCloudMusicApi
 ```
 aurora-music/
 ├── src/                    # 前端
-│   ├── components/         # MainView / Discover / ChatPanel / MiniBar / NowPlaying / MeshBackground / SpectrumRing / WaveformBar / Sidebar / AudioEngine
+│   ├── components/         # DJHome / AccountDialog / ModelDialog / MiniBar / NowPlaying / Sidebar / AudioEngine
 │   ├── store/usePlayer.ts  # 全局播放状态
 │   ├── lib/                # 合成音频、推荐算法、取色、歌词、可视化
 │   └── services/api.ts     # 后端请求封装
 ├── server/                 # Express API（3001）
 │   └── src/
-│       ├── routes/         # recommend / music / weather / chat / audio
+│       ├── routes/         # dj / account / recommend / music / weather / chat / audio
 │       └── services/       # 推荐引擎、LLM、网易云适配、音频合成
 ├── music-api/              # 本地 NeteaseCloudMusicApi（3100）
 └── screenshots/
@@ -38,7 +45,7 @@ aurora-music/
 
 ## 快速开始
 
-需要 Node.js 18+。
+需要符合 Vite 8 要求的 Node.js（20.19+ 或 22.12+，建议使用近期 LTS 版本）。
 
 ```bash
 # 1. 安装依赖
@@ -49,7 +56,10 @@ npm --prefix music-api install
 # 2. 配置环境变量
 cp server/.env.example server/.env
 
-# 3. 分别启动三个服务（各开一个终端）
+# 3. 一次启动前端、后端与音乐 API
+npm run dev:all
+
+# 或分别启动三个服务（各开一个终端）
 npm run music-api   # 网易云 API，端口 3100
 npm run server      # 后端 API，端口 3001
 npm run dev         # 前端，端口 5173（/api 已代理到 3001）
@@ -61,27 +71,48 @@ npm run dev         # 前端，端口 5173（/api 已代理到 3001）
 
 | 变量 | 说明 |
 | --- | --- |
-| `NETEASE_COOKIE` | 自己的网易云 `MUSIC_U`，用于播放账号有权限的会员歌曲 |
-| `LLM_PROVIDER` / `OPENAI_API_KEY` / `CLAUDE_API_KEY` / `DEEPSEEK_API_KEY` / `GEMINI_API_KEY` | 启用真实大模型推荐与聊天（deepseek 需先充值，gemini 有免费额度），未配置时走本地降级 |
-| `WEATHER_API_KEY` | 接入 OpenWeatherMap，未配置时使用模拟天气 |
+| `NETEASE_COOKIE` | 可选的服务端默认账号凭据；日常使用建议通过界面扫码连接自己的账号 |
+| `LLM_PROVIDER` / `OPENAI_API_KEY` / `CLAUDE_API_KEY` / `DEEPSEEK_API_KEY` / `GEMINI_API_KEY` | 可选的服务端模型配置；也可在界面连接模型。未配置时使用场景规则推荐，实际费用以服务商为准 |
 
 ## API
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
+| GET | `/api/dj/status` | 当前会话模型连接状态 |
+| POST | `/api/dj/model` | 验证模型连接并保存在后端会话内存 |
+| POST | `/api/dj/session` | 按心情生成、调整或补充已检查音源的队列 |
+| GET | `/api/account/status` | 网易云连接状态与公开资料 |
+| POST | `/api/account/qr` | 生成当前会话登录二维码 |
+| POST | `/api/account/check` | 检查扫码结果 |
+| POST | `/api/account/logout` | 清除会话内的网易云凭据 |
 | GET | `/api/music/providers` | 各音源可用状态 |
 | GET | `/api/music/search?source=local\|netease&q=` | 搜索 |
 | GET | `/api/music/stream/netease/:id` | 音频流代理（支持 Range） |
 | GET | `/api/audio/:trackId` | 本地合成音频（WAV） |
 | GET | `/api/recommend` | 基于心情/天气的推荐 |
+| GET | `/api/weather/cities?q=` | 搜索城市供用户选择 |
+| POST | `/api/weather` | 根据位置查询天气、空气质量与出行建议 |
 | POST | `/api/chat` | AI 对话 |
 
 ## 已知限制
 
-- 网易云匿名访问时，普通歌曲可完整播放，**VIP 歌曲仅 30 秒试听**；配置 `NETEASE_COOKIE` 可解锁有权限的完整版。
+- 网易云音源取决于账号订阅、版权与第三方接口。匿名或无权限账号可能只能试听或无法播放；登录不保证所有 VIP 歌曲可完整播放，也不绕过平台权限。
+- 网易云凭据和界面输入的模型 Key 只保存在后端会话内存，使用 HttpOnly 会话 Cookie 绑定浏览器；后端重启或会话超过 24 小时需要重新连接。请仅在本地使用，当前 API 监听 127.0.0.1。
+- 未连接真实模型时使用场景规则；模型异常时自动降级并在界面显示。外部音源或网络异常可能影响续播，界面提供重试提示。
 - QQ 音乐仅保留了 provider 占位，尚未接入。
 - 项目仅供本地学习与个人使用，音源来自第三方开源接口，请遵守相关平台的服务条款。
 
 ## 截图
 
 ![网易云搜索与播放](screenshots/netease-search.png)
+
+## 日常使用优化
+
+- 收藏、可编辑歌单、播放队列（拖动或上下移动）、随机播放、列表/单曲循环。
+- 搜索支持加载更多；文字歌单先搜索真实歌曲，再选择版本确认导入。
+- 音量、当前曲目与进度、队列、收藏、歌单和歌词保存到当前浏览器；重新打开时暂停待续播。
+- 导入的音频文件保存在 IndexedDB；浏览器清理站点数据后需要重新导入。
+- 加载、缓冲和失败状态明确显示；失败可重试或换一首；支持的浏览器可用系统媒体键。
+- 手动搜索、收藏、歌单与本地导入放在导航中，首页专注于心情输入和自动播放。
+
+验证命令：`npm test` 检查队列、循环、收藏、恢复、DJ 过滤、会话隔离与续播控制；`npm run build` 与 `npm run lint` 检查构建和代码规范。

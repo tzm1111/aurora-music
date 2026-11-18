@@ -26,6 +26,7 @@ export type Track = {
   source?: 'local' | 'netease' | 'qq';
   sourceId?: number;
   vip?: boolean;
+  preview?: boolean;
 };
 
 export type Playlist = {

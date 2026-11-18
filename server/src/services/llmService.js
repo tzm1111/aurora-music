@@ -276,3 +276,45 @@ function validateLLMResponse(data) {
 
   return data;
 }
+
+// DJ 使用结构化选歌计划，歌曲 ID 与可播权限始终由音乐接口核验。
+export function djModelStatus(settings) {
+  const configured = {
+    openai: Boolean(process.env.OPENAI_API_KEY && !process.env.OPENAI_API_KEY.startsWith('your_')),
+    deepseek: Boolean(process.env.DEEPSEEK_API_KEY),
+    gemini: Boolean(process.env.GEMINI_API_KEY),
+    claude: Boolean(process.env.CLAUDE_API_KEY && !process.env.CLAUDE_API_KEY.startsWith('your_')),
+  };
+  const provider = settings?.provider || process.env.LLM_PROVIDER || Object.keys(configured).find(key => configured[key]) || 'disabled';
+  return { provider, available: Boolean(settings?.apiKey || configured[provider]) };
+}
+export async function callDJPlan(description, previous, settings) {
+  const status = djModelStatus(settings);
+  if (!status.available) return null;
+  const prompt = `你是用户的私人音乐DJ。理解心情、场景、歌手偏好和否定约束，为连续播放生成选歌计划。不要闲聊或要求用户搜索。用户说更安静、换一批时，要在上次偏好基础上调整。
+用户：${description}
+上次意图：${JSON.stringify(previous || {})}
+只返回JSON：{"label":"最多8字的中文场景名","intro":"不超过50字，说明这段音乐的氛围","queries":["用于音乐搜索的具体歌曲名+歌手或歌手/风格，1到3项"],"excludeTerms":["应排除的版本或歌手"],"instrumental":false}。
+不要编造歌曲ID、链接或可播放权限。专注与助眠优先纯音乐，尊重不要Live、不要某歌手等限制。`;
+  try {
+    const providers = {
+      openai: { url: 'https://api.openai.com/v1/chat/completions', key: process.env.OPENAI_API_KEY, model: process.env.OPENAI_MODEL || 'gpt-4.1-mini' },
+      deepseek: { url: 'https://api.deepseek.com/v1/chat/completions', key: process.env.DEEPSEEK_API_KEY, model: process.env.DEEPSEEK_MODEL || 'deepseek-chat' },
+      gemini: { url: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', key: process.env.GEMINI_API_KEY, model: process.env.GEMINI_MODEL || 'gemini-2.5-flash' },
+      claude: { url: 'https://api.anthropic.com/v1/messages', key: process.env.CLAUDE_API_KEY, model: process.env.CLAUDE_MODEL || 'claude-sonnet-4-20250514' },
+    };
+    const config = providers[status.provider];
+    if (!config) return null;
+    const key = settings?.apiKey || config.key;
+    const response = await axios.post(config.url, { model: settings?.model || config.model, messages: [{ role: 'user', content: prompt }], max_tokens: 700 }, {
+      headers: status.provider === 'claude' ? { 'x-api-key': key, 'anthropic-version': '2023-06-01' } : { Authorization: `Bearer ${key}` }, timeout: 8000,
+    });
+    const text = status.provider === 'claude' ? response.data.content?.[0]?.text : response.data.choices?.[0]?.message?.content;
+    if (!text) return null;
+    const parsed = JSON.parse(text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim());
+    const queries = parsed.queries?.filter(query => typeof query === 'string' && query.trim()).slice(0, 3).map(query => query.slice(0, 100));
+    if (!queries?.length) return null;
+    return { label: String(parsed.label || '此刻的音乐').slice(0, 16), intro: String(parsed.intro || '让音乐陪你一会儿。').slice(0, 100),
+      queries, excludeTerms: Array.isArray(parsed.excludeTerms) ? parsed.excludeTerms.filter(t => typeof t === 'string').slice(0, 8).map(t => t.slice(0, 50)) : [], instrumental: parsed.instrumental === true };
+  } catch { return null; }
+}

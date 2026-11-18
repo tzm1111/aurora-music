@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Cloud, CloudRain, Sun, Snowflake, Moon, Play, Search, X } from 'lucide-react';
+import { Search, X } from 'lucide-react';
 import { usePlayer } from '../store/usePlayer';
-import type { Mood, Weather, Track } from '../types';
+import type { Mood, Track } from '../types';
 import { recommendByContext } from '../lib/recommend';
 import { TRACKS } from '../data/tracks';
+import { TrackList } from './TrackList';
 import { fetchProviders, searchTracks } from '../services/api';
 import type { ProviderId, ProviderStatus } from '../services/api';
 
@@ -17,18 +18,6 @@ const MOODS: { key: Mood; label: string }[] = [
   { key: 'sleepy',    label: '助眠' },
 ];
 
-const WEATHER_ICON: Record<Weather, React.ReactNode> = {
-  sunny:  <Sun size={28} />,
-  cloudy: <Cloud size={28} />,
-  rainy:  <CloudRain size={28} />,
-  snowy:  <Snowflake size={28} />,
-  night:  <Moon size={28} />,
-};
-
-const WEATHER_LABEL: Record<Weather, string> = {
-  sunny: '晴朗', cloudy: '多云', rainy: '小雨', snowy: '飘雪', night: '夜色',
-};
-
 const SOURCES: { id: ProviderId; label: string }[] = [
   { id: 'local',   label: '本地曲库' },
   { id: 'netease', label: '网易云音乐' },
@@ -38,14 +27,13 @@ export function MainView() {
   const mood = usePlayer(s => s.mood);
   const setMood = usePlayer(s => s.setMood);
   const weather = usePlayer(s => s.weather);
-  const setWeather = usePlayer(s => s.setWeather);
-  const city = usePlayer(s => s.city);
-  const temp = usePlayer(s => s.temperatureC);
   const importedTracks = usePlayer(s => s.importedTracks);
   const registerRemoteTracks = usePlayer(s => s.registerRemoteTracks);
 
   const [query, setQuery] = useState('');
-  const [source, setSource] = useState<ProviderId>('local');
+  const [source, setSource] = useState<ProviderId>(importedTracks.length || TRACKS.length ? 'local' : 'netease');
+  const [offset, setOffset] = useState(0);
+  const [retryKey, setRetryKey] = useState(0);
   const [providers, setProviders] = useState<ProviderStatus[]>([]);
   const [remote, setRemote] = useState<Track[]>([]);
   const [remoteTotal, setRemoteTotal] = useState(0);
@@ -55,8 +43,8 @@ export function MainView() {
   const allTracks = useMemo<Track[]>(() => [...TRACKS, ...importedTracks], [importedTracks]);
 
   const recommended = useMemo(
-    () => recommendByContext(mood, weather, 8),
-    [mood, weather]
+    () => recommendByContext(mood, weather, 8, allTracks),
+    [mood, weather, allTracks]
   );
 
   const filtered = useMemo<Track[]>(() => {
@@ -78,6 +66,7 @@ export function MainView() {
   const isRemoteSearch = source === 'netease' && Boolean(query.trim());
 
   const resetRemote = () => {
+    setOffset(0);
     setRemote([]);
     setRemoteTotal(0);
     setRemoteError(null);
@@ -91,17 +80,21 @@ export function MainView() {
 
   const handleQueryChange = (value: string) => {
     setQuery(value);
-    if (!value.trim()) resetRemote();
+    resetRemote();
+    if (source === 'netease' && value.trim()) setRemoteLoading(true);
   };
 
-  // 音源可用状态（挂载时拉一次）
+  // 页面恢复或用户重试时重新检查服务，不要求用户刷新整个播放器。
   useEffect(() => {
     const ctrl = new AbortController();
-    fetchProviders(ctrl.signal)
-      .then(setProviders)
-      .catch(() => {});
-    return () => ctrl.abort();
-  }, []);
+    const refresh = () => fetchProviders(ctrl.signal).then(setProviders).catch(() => {});
+    void refresh();
+    const onVisible = () => { if (document.visibilityState === 'visible') void refresh(); };
+    window.addEventListener('online', refresh);
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => { ctrl.abort(); window.removeEventListener('online', refresh); window.removeEventListener('focus', refresh); document.removeEventListener('visibilitychange', onVisible); };
+  }, [retryKey]);
 
   // 网易云搜索（防抖 + 可取消）
   useEffect(() => {
@@ -113,9 +106,10 @@ export function MainView() {
       setRemoteLoading(true);
       setRemoteError(null);
 
-      searchTracks('netease', q, 24, ctrl.signal)
+      searchTracks('netease', q, 24, ctrl.signal, offset)
         .then(result => {
-          setRemote(result.tracks);
+          if (ctrl.signal.aborted) return;
+          setRemote(previous => offset ? Array.from(new Map([...previous, ...result.tracks].map(t => [t.id, t])).values()) : result.tracks);
           setRemoteTotal(result.total);
           registerRemoteTracks(result.tracks);
         })
@@ -134,36 +128,14 @@ export function MainView() {
       clearTimeout(timer);
       ctrl.abort();
     };
-  }, [query, source, registerRemoteTracks]);
-
-  const greeting = useMemo(() => {
-    const h = new Date().getHours();
-    if (h < 6) return '深夜好';
-    if (h < 12) return '早上好';
-    if (h < 18) return '下午好';
-    return '晚上好';
-  }, []);
-
-  const cycleWeather = () => {
-    const list: Weather[] = ['sunny','cloudy','rainy','snowy','night'];
-    const i = list.indexOf(weather);
-    setWeather(list[(i + 1) % list.length]);
-  };
+  }, [query, source, registerRemoteTracks, offset, retryKey]);
 
   return (
-    <main className="main glass-soft">
+    <section className="main glass-soft search-view">
       <div className="hero">
         <div>
-          <div className="greeting">{greeting} · 推荐由极光为你呈现</div>
-          <h1>今天，听点{moodToWord(mood)}的</h1>
-          <p>根据 {city}的{WEATHER_LABEL[weather]}天气与你的心情，我们挑选了以下歌单</p>
-        </div>
-        <div className="weather-card glass-soft" onClick={cycleWeather} style={{cursor:'pointer'}} title="点击切换天气">
-          {WEATHER_ICON[weather]}
-          <div>
-            <div className="temp">{temp}°</div>
-            <div className="meta">{city} · {WEATHER_LABEL[weather]}</div>
-          </div>
+          <p className="greeting">音乐搜索</p>
+          <h1>找首喜欢的歌</h1>
         </div>
       </div>
 
@@ -172,7 +144,7 @@ export function MainView() {
           <button
             key={m.key}
             className={`mood-chip ${mood === m.key ? 'active' : ''}`}
-            onClick={() => setMood(m.key)}
+            onClick={() => { setMood(m.key); if (!allTracks.length) { setSource('netease'); handleQueryChange(({ happy: '快乐 流行', chill: '舒缓 轻音乐', focus: '专注 纯音乐', sad: '安静 民谣', energetic: '跑步 动感', romantic: '温柔 浪漫', sleepy: '助眠 纯音乐' } as Record<Mood, string>)[m.key]); } }}
           >
             {m.label}
           </button>
@@ -200,7 +172,7 @@ export function MainView() {
             type="text"
             value={query}
             onChange={e => handleQueryChange(e.target.value)}
-            placeholder={source === 'netease'
+            aria-label="搜索歌曲或歌手" placeholder={source === 'netease'
               ? '搜索网易云：歌名 · 歌手 · 专辑'
               : '搜索歌曲 · 艺术家 · 标签（如 chill / rainy / CN）'}
           />
@@ -214,7 +186,7 @@ export function MainView() {
 
       {source === 'netease' && neteaseDown && (
         <div className="source-hint warn">
-          网易云服务未连接：在 aurora-music 目录运行 <code>npm run music-api</code> 后刷新页面
+          音乐服务暂时离线，本地音乐仍可使用。<button onClick={() => setRetryKey(k => k + 1)}>重新连接</button>
         </div>
       )}
       {source === 'netease' && !neteaseDown && !query.trim() && (
@@ -235,15 +207,16 @@ export function MainView() {
               </span>
             </div>
             {remoteError ? (
-              <div className="empty-tip">{remoteError}</div>
+              <div className="empty-tip" role="alert">{remoteError}<button className="primary-action" onClick={() => { setRemoteLoading(true); setRetryKey(k => k + 1); }}>重试搜索</button></div>
             ) : remote.length ? (
               <>
                 {remote.some(t => t.vip) && (
                   <div className="source-hint">
-                    标 VIP 的歌曲在未登录状态下为 30 秒试听；有自己的会员账号可在 <code>server/.env</code> 配置 <code>NETEASE_COOKIE</code>
+                    部分 VIP 歌曲可能仅提供试听或暂不可播放，具体以音源返回为准。
                   </div>
                 )}
                 <TrackList tracks={remote} queue={remote.map(r => r.id)} />
+                {remote.length < remoteTotal && <button className="load-more" disabled={remoteLoading} onClick={() => setOffset(value => value + 24)}>{remoteLoading ? '加载中…' : '加载更多歌曲'}</button>}
               </>
             ) : (
               <div className="empty-tip">
@@ -266,9 +239,15 @@ export function MainView() {
         )
       ) : (
         <>
-          <div className="section-h">
+          {!allTracks.length && <div className="welcome-card">
+            <p className="eyebrow">你的音乐，从这里开始</p><h2>今天想听谁？</h2>
+            <p>搜索喜欢的歌手，或导入自己的音频。收藏之后，下次回来继续听。</p>
+            <div className="quick-searches">{['Kanye West', '周杰伦', '陈奕迅', 'Lo-fi'].map(q => <button key={q} onClick={() => { setSource('netease'); handleQueryChange(q); }}>{q}</button>)}</div>
+            <button className="primary-action" onClick={() => usePlayer.getState().setNavOpen(true)}>导入本地音乐</button>
+          </div>}
+          {allTracks.length > 0 && <><div className="section-h">
             <h2>为你推荐</h2>
-            <span className="more">基于天气 + 心情 智能挑选</span>
+            <span className="more">从你的曲库按心情挑选</span>
           </div>
           <TrackList tracks={recommended} queue={recommended.map(r => r.id)} />
 
@@ -276,49 +255,14 @@ export function MainView() {
             <h2>全部曲库</h2>
             <span className="more">共 {allTracks.length} 首 · 含本地导入</span>
           </div>
-          <TrackList tracks={allTracks} queue={allTracks.map(x => x.id)} />
+          <TrackList tracks={allTracks} queue={allTracks.map(x => x.id)} /></>}
         </>
       )}
-    </main>
+    </section>
   );
 }
 
-function fmtDuration(sec: number): string {
-  if (!sec || sec <= 0) return '';
-  return `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, '0')}`;
-}
 
-/** 简洁列表：一行一首，小封面 + 标题/歌手 + 时长，悬停显示播放 */
-function TrackList({ tracks, queue }: { tracks: Track[]; queue: string[] }) {
-  const playTrack = usePlayer(s => s.playTrack);
-  return (
-    <div className="track-list">
-      {tracks.map(t => (
-        <div key={t.id} className="track-row" onClick={() => playTrack(t.id, queue)}>
-          <div className="thumb">
-            <img src={t.cover} alt="" loading="lazy" />
-            <span className="row-play"><Play size={14} fill="currentColor" /></span>
-          </div>
-          <div className="row-meta">
-            <div className="row-title">
-              {t.title}
-              {t.vip && <span className="vip-badge">VIP</span>}
-            </div>
-            <div className="row-artist">{t.artist}{t.region ? ' · ' + t.region : ''}</div>
-          </div>
-          {t.duration > 0 && <span className="row-dur">{fmtDuration(t.duration)}</span>}
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function moodToWord(m: Mood): string {
-  return ({
-    happy: '欢快', chill: '舒缓', focus: '专注', sad: '安静',
-    energetic: '带劲', romantic: '温柔', sleepy: '助眠',
-  } as Record<Mood,string>)[m];
-}
 
 // 中文搜索关键词扩展：把中文词转为可能匹配的英文标签
 const ZH_TO_TAGS: Record<string, string[]> = {

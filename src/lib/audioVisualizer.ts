@@ -11,7 +11,7 @@ let source: MediaElementAudioSourceNode | null = null;
 function ensure(): { ctx: AudioContext; analyser: AnalyserNode } {
   if (!ctx) {
     const AC: typeof AudioContext =
-      window.AudioContext || (window as any).webkitAudioContext;
+      window.AudioContext || (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext!;
     ctx = new AC();
     analyser = ctx.createAnalyser();
     analyser.fftSize = 512;        // 256 个频段
@@ -27,7 +27,7 @@ export function connectAudioElement(el: HTMLAudioElement) {
   if (connectedEl === el && source) return;
   // 同一 audio 元素只能创建一次 MediaElementSource
   if (source && connectedEl !== el) {
-    try { source.disconnect(); } catch {}
+    try { source.disconnect(); } catch { /* 已断开的节点无需再次处理 */ }
   }
   if (connectedEl !== el) {
     source = ctx.createMediaElementSource(el);

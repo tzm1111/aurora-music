@@ -6,12 +6,14 @@ import { musicRouter } from './routes/music.js';
 import { weatherRouter } from './routes/weather.js';
 import { chatRouter } from './routes/chat.js';
 import { audioRouter } from './routes/audio.js';
+import { accountRouter } from './routes/account.js';
+import { djRouter } from './routes/dj.js';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 
 // 中间件
-app.use(cors());
+app.use(cors({ origin: ['http://127.0.0.1:5173', 'http://localhost:5173'], credentials: true }));
 app.use(express.json());
 
 // 路由
@@ -20,6 +22,8 @@ app.use('/api/music', musicRouter);
 app.use('/api/weather', weatherRouter);
 app.use('/api/chat', chatRouter);
 app.use('/api/audio', audioRouter);
+app.use('/api/account', accountRouter);
+app.use('/api/dj', djRouter);
 
 // 健康检查
 app.get('/api/health', (req, res) => {
@@ -30,7 +34,7 @@ app.get('/api/health', (req, res) => {
       llm: process.env.LLM_PROVIDER || 'disabled',
       music: process.env.NETEASE_MUSIC_API_URL ? 'configured' : 'disabled',
       neteaseApi: process.env.NETEASE_MUSIC_API_URL || 'http://localhost:3100',
-      weather: process.env.WEATHER_API_KEY ? 'configured' : 'disabled',
+      weather: 'open-meteo / met-norway',
     },
   });
 });
@@ -48,7 +52,7 @@ app.use((err, req, res, next) => {
 });
 
 // 启动服务器
-app.listen(PORT, () => {
+app.listen(PORT, '127.0.0.1', () => {
   console.log(`🎵 Aurora Music Server running on http://localhost:${PORT}`);
   console.log(`   LLM Provider: ${process.env.LLM_PROVIDER || 'disabled'}`);
   console.log(`   Environment: ${process.env.NODE_ENV || 'development'}`);

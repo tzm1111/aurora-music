@@ -30,16 +30,16 @@ export function ChatPanel() {
     const q = (raw ?? text).trim();
     if (!q) return;
     setText('');
-    const userMsg: ChatMessage = { id: 'u' + Date.now(), role: 'user', text: q };
+    const userMsg: ChatMessage = { id: 'u' + crypto.randomUUID(), role: 'user', text: q };
     push(userMsg);
     setTimeout(() => {
       const picks = recommendByText(q, 3);
       if (picks.length === 0) {
-        push({ id: 'a' + Date.now(), role: 'ai', text: '嗯…我没完全 get 到，能再描述一下心情或风格吗？' });
+        push({ id: 'a' + crypto.randomUUID(), role: 'ai', text: '当前本地曲库还没有可推荐的歌曲。请先搜索在线音乐，或导入自己的音频。' });
         return;
       }
       const head: ChatMessage = {
-        id: 'a' + Date.now(),
+        id: 'a' + crypto.randomUUID(),
         role: 'ai',
         text: replyText(q, picks[0].title),
       };
@@ -47,7 +47,7 @@ export function ChatPanel() {
       picks.forEach((t, i) => {
         setTimeout(() => {
           push({
-            id: 'a' + Date.now() + '_' + i,
+            id: 'a' + crypto.randomUUID() + '_' + i,
             role: 'ai',
             text: i === 0 ? '试试这首：' : '或者这首：',
             pickedTrackId: t.id,
@@ -61,7 +61,7 @@ export function ChatPanel() {
     <aside className="chat glass">
       <div className="chat-head">
         <span className="ai-dot"/>
-        <Sparkles size={16}/> Aurora · 你的音乐伙伴
+        <Sparkles size={16}/> Aurora · 本地规则推荐
         <button className="chat-close" onClick={() => setChatOpen(false)} title="收起">
           <X size={16} />
         </button>

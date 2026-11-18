@@ -1,24 +1,36 @@
-import { useEffect } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
-import { Menu, MessageCircle } from 'lucide-react';
+import { useEffect, useCallback, useState } from 'react';
+import { AnimatePresence } from 'framer-motion';
+import { Dialog } from './components/Dialog';
+import { useAutoDJ } from './lib/useAutoDJ';
+import { Menu, UserRound, Sparkles, Music2, Radio } from 'lucide-react';
 import { Sidebar } from './components/Sidebar';
 import { MainView } from './components/MainView';
 import { Discover } from './components/Discover';
-import { ChatPanel } from './components/ChatPanel';
+import { AccountDialog } from './components/AccountDialog';
+import { DJHome } from './components/DJHome';
+import { DJPlaylistView } from './components/DJPlaylistView';
+import { WeatherWidget } from './components/WeatherWidget';
+import { apiRequest } from './services/api';
+import type { AccountStatus } from './services/api';
 import { MiniBar } from './components/MiniBar';
 import { NowPlaying } from './components/NowPlaying';
 import { MeshBackground } from './components/MeshBackground';
 import { AudioEngine } from './components/AudioEngine';
-import { usePlayer, useCurrentTrack } from './store/usePlayer';
+import { CollectionView } from './components/CollectionView';
+import { QueuePanel } from './components/QueuePanel';
+import { usePlayer, useCurrentTrack, hydrateLocalAudio } from './store/usePlayer';
 import { extractPalette, applyPaletteToCSS } from './lib/colorExtract';
 
 export default function App() {
   const current = useCurrentTrack();
-  const setWeather = usePlayer(s => s.setWeather);
+  const currentCover = current?.cover;
+  useAutoDJ();
   const view = usePlayer(s => s.view);
   const immersive = usePlayer(s => s.immersive);
-  const chatOpen = usePlayer(s => s.chatOpen);
-  const setChatOpen = usePlayer(s => s.setChatOpen);
+  const [accountOpen, setAccountOpen] = useState(false);
+  const [account, setAccount] = useState<AccountStatus>({ loggedIn: false, profile: null });
+  const updateAccount = useCallback((value: AccountStatus) => { setAccount(value); window.dispatchEvent(new Event('aurora-connections')); }, []);
+  useEffect(() => { apiRequest<AccountStatus>('/api/account/status').then(setAccount).catch(() => {}); }, []);
   const navOpen = usePlayer(s => s.navOpen);
   const setNavOpen = usePlayer(s => s.setNavOpen);
   const nowPlayingOpen = usePlayer(s => s.nowPlayingOpen);
@@ -28,27 +40,21 @@ export default function App() {
   const audioError = usePlayer(s => s.audioError);
   const setAudioError = usePlayer(s => s.setAudioError);
 
-  // 根据当前小时动态推断默认天气/夜晚
-  useEffect(() => {
-    const h = new Date().getHours();
-    if (h >= 22 || h < 6) setWeather('night');
-  }, [setWeather]);
+  const queueOpen = usePlayer(s => s.queueOpen);
+  const storageError = usePlayer(s => s.storageError);
+  useEffect(() => { void hydrateLocalAudio(); }, []);
 
   // 封面色调 → 全局变量 + 快照（mesh 背景交叉淡入用）
   useEffect(() => {
-    if (!current) return;
-    extractPalette(current.cover).then(p => {
+    if (!currentCover) return;
+    let cancelled = false;
+    extractPalette(currentCover).then(p => {
+      if (cancelled) return;
       applyPaletteToCSS(p);
       setPalette(p);
     });
-  }, [current?.cover, setPalette]);
-
-  // 播放失败提示 5 秒后自动消失
-  useEffect(() => {
-    if (!audioError) return;
-    const t = setTimeout(() => setAudioError(null), 5000);
-    return () => clearTimeout(t);
-  }, [audioError, setAudioError]);
+    return () => { cancelled = true; };
+  }, [currentCover, setPalette]);
 
   // 沉浸模式：仅在 discover 页生效
   const isImmersive = immersive && view === 'discover';
@@ -57,7 +63,7 @@ export default function App() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement | null)?.tagName?.toLowerCase();
-      if (tag === 'input' || tag === 'textarea') return;
+      if (tag === 'input' || tag === 'textarea' || (e.target as HTMLElement | null)?.closest('button, a, select, [role=slider], [contenteditable=true]')) return;
       const s = usePlayer.getState();
       switch (e.code) {
         case 'Space':
@@ -88,7 +94,8 @@ export default function App() {
           s.setVolume(s.volume - 0.05);
           break;
         case 'Escape':
-          if (s.nowPlayingOpen) s.setNowPlayingOpen(false);
+          if (s.queueOpen) s.setQueueOpen(false);
+          else if (s.nowPlayingOpen) s.setNowPlayingOpen(false);
           else if (s.navOpen) s.setNavOpen(false);
           else if (s.chatOpen) s.setChatOpen(false);
           else if (s.immersive) s.setImmersive(false);
@@ -100,12 +107,12 @@ export default function App() {
   }, []);
 
   return (
-    <div className={`app app-v2 ${isImmersive ? 'app-immersive' : ''}`}>
+    <div className={`app app-v2 ${isImmersive ? 'app-immersive' : ''} ${view === 'home' ? 'app-dj' : ''}`}>
       <MeshBackground palette={palette} isPlaying={isPlaying} />
 
       {!isImmersive && (
         <header className="topbar">
-          <button className="topbar-btn" onClick={() => setNavOpen(true)} title="导航">
+          <button className="topbar-btn nav-toggle" onClick={() => setNavOpen(true)} title="导航" aria-label="打开音乐库">
             <Menu size={20} />
           </button>
           <div className="brand">
@@ -113,58 +120,30 @@ export default function App() {
             <span>Aurora</span>
           </div>
           <div className="topbar-right">
-            <button className="topbar-btn" onClick={() => setChatOpen(!chatOpen)} title="音乐伙伴">
-              <MessageCircle size={19} />
-            </button>
+            <nav className="topbar-shortcuts" aria-label="音乐快捷导航">
+              {[
+                { id: 'home' as const, label: '专属 DJ', Icon: Sparkles },
+                { id: 'search' as const, label: '手动找歌', Icon: Music2 },
+                { id: 'discover' as const, label: '发现 · 频谱', Icon: Radio },
+              ].map(({ id, label, Icon }) => <button key={id} className={`topbar-btn ${view === id ? 'active' : ''}`} title={label} aria-label={label} aria-current={view === id ? 'page' : undefined} onClick={() => usePlayer.getState().setView(id)}><Icon size={18}/></button>)}
+            </nav>
+            <button className="account-button" onClick={() => setAccountOpen(true)} title="网易云账号"><UserRound size={16}/><span>{account.loggedIn ? account.profile?.nickname || '网易云已连接' : '连接网易云'}</span></button>
           </div>
         </header>
       )}
 
-      <main className="stage">
-        {view === 'home' ? <MainView /> : <Discover />}
+      {!isImmersive && <div className="weather-region"><WeatherWidget /></div>}
+
+      <div className="workspace-shell">
+      <main className="stage" key={view} tabIndex={-1}>
+        {view === 'home' ? <DJHome /> : view === 'search' ? <MainView /> : view === 'discover' ? <Discover /> : view === 'djplaylists' ? <DJPlaylistView/> : <CollectionView />}
       </main>
+      </div>
 
-      <AnimatePresence>
-        {navOpen && (
-          <motion.div
-            key="nav-backdrop"
-            className="drawer-backdrop"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={() => setNavOpen(false)}
-          >
-            <motion.aside
-              className="nav-drawer"
-              initial={{ x: -320 }}
-              animate={{ x: 0 }}
-              exit={{ x: -320 }}
-              transition={{ type: 'spring', stiffness: 300, damping: 32 }}
-              onClick={e => {
-                e.stopPropagation();
-                if ((e.target as HTMLElement).closest('.nav-item')) setNavOpen(false);
-              }}
-            >
-              <Sidebar />
-            </motion.aside>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      <AnimatePresence>
-        {chatOpen && !isImmersive && (
-          <motion.div
-            key="chat-drawer"
-            className="chat-drawer"
-            initial={{ x: 400 }}
-            animate={{ x: 0 }}
-            exit={{ x: 400 }}
-            transition={{ type: 'spring', stiffness: 300, damping: 32 }}
-          >
-            <ChatPanel />
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {navOpen && <Dialog label="音乐库导航" onClose={() => setNavOpen(false)} backdropClass="drawer-backdrop" panelClass="nav-drawer">
+        <div className="drawer-heading"><span>音乐库</span><button aria-label="关闭音乐库" onClick={() => setNavOpen(false)}>✕</button></div>
+        <div className="drawer-content" onClick={e => { if ((e.target as HTMLElement).closest('.nav-item, .playlist-item')) setNavOpen(false); }}><Sidebar /></div>
+      </Dialog>}
 
       {!isImmersive && (
         <AnimatePresence>
@@ -173,12 +152,12 @@ export default function App() {
       )}
 
       <AudioEngine />
-      {audioError && (
-        <div className="audio-err" onClick={() => setAudioError(null)} title="点击关闭">
-          <span>{audioError}</span>
-          <span className="audio-err-hint">点击关闭 · 可试试其他歌曲</span>
-        </div>
-      )}
+      {accountOpen && <AccountDialog account={account} onChange={updateAccount} onClose={() => setAccountOpen(false)}/>}
+      {queueOpen && <QueuePanel />}
+      {storageError && <div className="storage-warning" role="alert">{storageError}<button onClick={() => usePlayer.setState({ storageError: null })}>关闭</button></div>}
+      {audioError && <div className="audio-err" role="alert"><span>{audioError}</span>
+        <div className="error-actions"><button onClick={() => usePlayer.getState().retry()}>重试播放</button><button onClick={() => usePlayer.getState().next()}>换一首</button><button onClick={() => setAudioError(null)}>关闭</button></div>
+      </div>}
     </div>
   );
 }

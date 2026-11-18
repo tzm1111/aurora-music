@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { usePlayer } from '../store/usePlayer';
 
-// 波形进度条：每首歌用 id 做种子生成固定波形，播过的位置点亮，点击可 seek。
+// 装饰波形进度条；原生滑块支持触摸拖动与键盘调整。
 function hashStr(s: string): number {
   let h = 2166136261;
   for (let i = 0; i < s.length; i++) {
@@ -33,17 +33,12 @@ export function WaveformBar({ trackId }: { trackId: string }) {
 
   const pct = duration > 0 ? progress / duration : 0;
 
-  const onSeek = (e: React.MouseEvent<HTMLDivElement>) => {
-    const r = e.currentTarget.getBoundingClientRect();
-    const x = (e.clientX - r.left) / r.width;
-    seek(Math.max(0, Math.min(1, x)) * duration);
-  };
-
   return (
-    <div className="waveform" onClick={onSeek}>
+    <div className="waveform">
+      <input className="waveform-input" type="range" aria-label="播放进度" aria-valuetext={`${Math.floor(progress / 60)} 分 ${Math.floor(progress % 60)} 秒`} min="0" max={duration || 1} step="1" value={Math.min(progress, duration || 1)} disabled={!duration} onChange={e => seek(Number(e.target.value))}/>
       {bars.map((h, i) => (
         <span
-          key={i}
+          aria-hidden="true" key={i}
           className={`wf-bar ${i / bars.length <= pct ? 'played' : ''}`}
           style={{ height: `${Math.round(h * 100)}%` }}
         />

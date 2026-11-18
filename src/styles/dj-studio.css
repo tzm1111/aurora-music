@@ -1,0 +1,117 @@
+/* DJ 主舞台：语音光球、心情坐标与连续推荐。 */
+.dj-studio { width: min(1120px, 100%); margin: auto; padding: 12px 0 20px; color: #e8eff8; }
+.studio-toolbar { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:28px; }
+.studio-brand { display:flex; align-items:center; gap:8px; font-size:11px; letter-spacing:.15em; color:#c1dedf; }
+.studio-brand > span,.presence-dot,.session-dot { width:5px; height:5px; border-radius:50%; background:#a9ece0; box-shadow:0 0 12px #a9ece077; flex-shrink:0; }
+.studio-brand small { font-size:11px; letter-spacing:.05em; color:#8094a8; }
+.studio-history { display:flex; align-items:center; gap:8px; min-height:44px; padding:0 14px; border:1px solid #bdcfe522; border-radius:99px; color:#adbfce; font-size:12px; background:#aabbd507; }
+.studio-history > span { color:#e6ecef; }
+.studio-layout { display:grid; grid-template-columns:minmax(0,1.3fr) minmax(300px,.9fr); gap:clamp(32px,6vw,90px); align-items:center; }
+.studio-presence { text-align:center; min-width:0; }
+.presence-caption { display:flex; align-items:center; justify-content:center; gap:8px; font-size:12px; letter-spacing:.06em; color:#b5c4d2; }
+.presence-scene { height:300px; position:relative; display:grid; place-items:center; isolation:isolate; margin:8px 0 4px; }
+.presence-aura { position:absolute; width:100%; height:100%; background:radial-gradient(ellipse,#6be5d221,transparent 67%); opacity:.8; }
+.presence-orbit { position:absolute; width:268px; height:268px; border:1px solid #9ad9db1c; border-radius:50%; transform:rotate(-26deg) scaleY(.8); }
+.presence-orbit::after { content:''; position:absolute; inset:-22px; border:1px dashed #abc0e314; border-radius:50%; }
+.presence-orb { position:relative; width:202px; height:202px; border-radius:50%; isolation:isolate; overflow:hidden; background:radial-gradient(circle at 38% 28%,#123b4c,#080f25 70%); border:1px solid #befff54d; box-shadow:inset 0 0 30px #8ff3e121,inset -10px -18px 30px #07091c,0 0 50px #8ae9e01c; transition:box-shadow .3s,transform .3s; cursor:pointer; }
+.presence-orb:hover:not(:disabled) { transform:scale(1.035); box-shadow:inset 0 0 38px #c9fff433,0 0 60px #8ae9e036; }
+.presence-orb:focus-visible { outline:2px solid #c5fff0; outline-offset:9px; }
+.presence-fluid { position:absolute; border-radius:43% 57% 65% 35% / 40% 43% 57% 60%; filter:blur(10px); width:170px; height:150px; opacity:.7; animation:studio-flow 12s ease-in-out infinite alternate; animation-play-state:paused; pointer-events:none; }
+.fluid-one { background:linear-gradient(130deg,#b6f9de,#429ead 60%,transparent); left:-44px; top:-48px; }
+.fluid-two { background:linear-gradient(120deg,#6b9cec,#7164cd 60%,transparent); bottom:-56px; right:-25px; animation-delay:-4s; transform:rotate(65deg); }
+.fluid-three { border:16px solid #a9f9d88c; left:24px; top:66px; width:168px; height:158px; background:transparent; filter:blur(7px); animation-delay:-8s; transform:rotate(-35deg); }
+.presence-voice { position:absolute; inset:0; display:grid; place-items:center; color:#d9fff2; text-shadow:0 0 20px #d9fff2; }
+.presence-coordinate { position:absolute; top:50%; font-size:8px; letter-spacing:.18em; color:#708a9c; writing-mode:vertical-rl; }
+.coordinate-left { left:12%; transform:translateY(-50%) rotate(180deg); }.coordinate-right { right:12%; transform:translateY(-50%); }
+.motion-on .presence-fluid { animation-play-state:running; }
+.is-listening .presence-orb { border-color:#c3ffe7; box-shadow:0 0 70px #7df8c946; }
+.is-thinking .presence-fluid { animation-duration:3s; }.is-thinking .presence-orb { border-color:#c2b4ff88; }
+.voice-bars { height:34px; display:flex; align-items:center; gap:5px; }
+.voice-bars i { height:12px; width:3px; border-radius:6px; background:#e0fff0; animation:studio-voice .65s ease-in-out infinite alternate; animation-play-state:paused; }.voice-bars i:nth-child(2),.voice-bars i:nth-child(4) { height:26px; animation-delay:-.3s; }.voice-bars i:nth-child(3) { height:34px; animation-delay:-.5s; }.motion-on .voice-bars i { animation-play-state:running; }
+.studio-presence h1 { font-size:clamp(27px,3vw,38px); font-weight:500; letter-spacing:-.04em; line-height:1.4; margin:0 0 12px; text-wrap:balance; }
+.presence-description { color:#99aec2; font-size:13px; line-height:1.8; max-width:450px; margin:0 auto 22px; text-wrap:pretty; }
+.presence-talk { min-height:44px; display:flex; align-items:center; justify-content:center; gap:8px; margin:0 auto 12px; color:#cff1e8; font-size:13px; }
+.presence-talk > span { color:#6f879d; font-size:10px; margin-left:4px; }
+.studio-composer { display:flex; align-items:center; gap:8px; padding:6px 7px 6px 16px; background:#bdcce608; border:1px solid #aac4df26; border-radius:16px; text-align:left; }
+.studio-composer:focus-within { border-color:#a9eadb80; box-shadow:0 0 0 3px #a9eadb08; }
+.studio-composer input { flex:1; min-width:0; font-size:14px; padding:10px 0; background:transparent; color:#e2eff4; }
+.studio-composer input::placeholder { color:#72899e; }
+.studio-composer button { width:44px; height:44px; display:grid; place-items:center; border-radius:11px; background:#b4e4dd; color:#142737; flex-shrink:0; }
+.dj-studio button:disabled { opacity:.4; cursor:default; }
+.studio-feedback { min-height:28px; color:#a8cfc9; font-size:11px; line-height:1.6; }.studio-feedback p { margin:8px 0 0; }.studio-feedback [role=alert] { color:#e8b8bf; }
+.studio-side { min-width:0; display:flex; flex-direction:column; gap:16px; }
+.studio-mood { background:linear-gradient(145deg,#a8bfdd09,#91d8cb03); border:1px solid #aac4db20; border-radius:22px; padding:20px; }
+.studio-mood header,.studio-session header { display:flex; align-items:center; justify-content:space-between; gap:10px; font-size:12px; color:#c9d9e2; }
+.studio-mood header > span,.studio-session header > span { display:flex; align-items:center; gap:7px; }.studio-mood header small { font-size:10px; color:#748d9d; white-space:nowrap; }
+.mood-map { height:234px; margin:20px 0 16px; position:relative; border-radius:16px; overflow:hidden; touch-action:none; cursor:crosshair; background:radial-gradient(ellipse at 15% 10%,#7ddec71c,transparent 65%),radial-gradient(ellipse at 90% 90%,#776ab621,transparent 65%),#080f1d55; user-select:none; }
+.mood-grid { position:absolute; inset:24px; background:linear-gradient(#b4c6de12 1px,transparent 1px),linear-gradient(90deg,#b4c6de12 1px,transparent 1px); background-size:25% 25%; border-right:1px solid #b4c6de12; border-bottom:1px solid #b4c6de12; mask-image:radial-gradient(ellipse,black,transparent 85%); }
+.mood-map::before,.mood-map::after { content:''; position:absolute; background:#b4c6de24; }.mood-map::before { width:1px; top:35px; bottom:35px; left:50%; }.mood-map::after { height:1px; left:35px; right:35px; top:50%; }
+.mood-axis { position:absolute; font-size:10px; color:#88a2b4; z-index:2; }.axis-top { top:12px; left:50%; transform:translateX(-50%); }.axis-bottom { bottom:12px; left:50%; transform:translateX(-50%); }.axis-left { left:12px; top:50%; transform:translateY(-50%); }.axis-right { right:12px; top:50%; transform:translateY(-50%); }
+.mood-glow { position:absolute; width:145px; height:145px; left:clamp(15px,var(--mood-x),calc(100% - 15px)); top:clamp(15px,var(--mood-y),calc(100% - 15px)); transform:translate(-50%,-50%); background:radial-gradient(circle,#a4edcf35,transparent 70%); pointer-events:none; }
+.mood-point { position:absolute; left:clamp(15px,var(--mood-x),calc(100% - 15px)); top:clamp(15px,var(--mood-y),calc(100% - 15px)); width:14px; height:14px; border-radius:50%; background:#d7ffed; border:3px solid #78c6b1; box-shadow:0 0 0 7px #b7f9df12,0 0 22px #b7f9df77; transform:translate(-50%,-50%); pointer-events:none; }
+.mood-accessible { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); }.mood-accessible:focus-within { position:relative; width:auto; height:auto; clip-path:none; display:grid; gap:8px; font-size:11px; color:#a6c6d3; padding:8px 0; }.mood-accessible label { display:flex; gap:12px; align-items:center; }.mood-accessible input { min-width:0; flex:1; accent-color:#b5e8d4; }
+.mood-selection { display:flex; justify-content:space-between; align-items:center; gap:8px; font-size:11px; color:#a5c3c9; }.mood-selection button { display:flex; align-items:center; justify-content:center; gap:7px; min-height:44px; border-radius:12px; padding:0 14px; font-size:12px; background:linear-gradient(110deg,#b6edda,#b7c6ef); color:#142d38; font-weight:500; }
+.studio-scenes { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }.studio-scenes button { text-align:left; min-height:44px; padding:10px 14px; display:flex; align-items:center; justify-content:space-between; border:1px solid #aac4db16; border-radius:12px; background:#aac4db04; color:#91a8ba; font-size:12px; }.studio-scenes button:hover:not(:disabled) { color:#d2efdf; background:#aac4db0c; }
+.studio-footer { display:flex; align-items:center; justify-content:space-between; gap:12px; border-top:1px solid #b1c7df12; margin-top:24px; padding-top:12px; font-size:10px; color:#667e93; }.studio-footer button { display:flex; align-items:center; gap:6px; min-height:44px; font-size:11px; color:#8aa8bc; }
+.studio-session { padding:20px; border-radius:22px; border:1px solid #b6e8d52d; background:linear-gradient(135deg,#9ae3cf0b,#a2b6d508); }
+.studio-session header button { display:flex; gap:3px; align-items:center; min-height:36px; color:#9cb9c4; font-size:11px; }
+.session-current { display:flex; align-items:center; gap:12px; margin:14px 0 22px; }.session-cover { flex-shrink:0; }.session-cover img { width:62px; height:62px; border-radius:14px; object-fit:cover; }.session-current > div { min-width:0; flex:1; }.session-current h2 { font-size:16px; font-weight:500; margin:0 0 5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }.session-current p { font-size:11px; color:#91a8b9; margin:0 0 5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }.session-current small { color:#aacabb; font-size:10px; }.session-play { width:44px; height:44px; display:grid; place-items:center; border-radius:50%; background:#bbebdc; color:#183b38; flex-shrink:0; }
+.session-next-label { color:#7e99ac; font-size:10px; margin-bottom:8px; }.studio-session ol { padding:0; margin:0; list-style:none; }.studio-session li button { display:flex; align-items:center; width:100%; gap:10px; padding:8px 0; text-align:left; color:#a4c8cf; min-height:52px; }.studio-session li img { width:34px; height:34px; border-radius:7px; object-fit:cover; }.studio-session li span { flex:1; min-width:0; display:flex; flex-direction:column; gap:4px; }.studio-session li b { font-size:12px; font-weight:400; color:#c7d6df; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }.studio-session li small { font-size:10px; color:#748ea1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }.session-note { border-top:1px solid #aac4db16; padding-top:12px; margin:12px 0 0; font-size:10px; line-height:1.7; color:#89a7b1; }
+.has-session .presence-scene { height:260px; }.has-session .mood-map { height:160px; margin:14px 0 8px; }.has-session .studio-mood { padding:16px 20px; }.has-session .studio-scenes { grid-template-columns:repeat(3,minmax(0,1fr)); }.has-session .studio-scenes button { padding-inline:10px; font-size:11px; }
+.studio-error { padding:14px; border:1px solid #e8b8bf33; border-radius:14px; color:#e8b8bf; font-size:12px; margin-top:16px; display:flex; align-items:center; justify-content:space-between; gap:12px; }.studio-error button { min-height:44px; white-space:nowrap; }
+@keyframes studio-flow { 0% { translate:0 0; rotate:0deg; scale:1; } 100% { translate:20px 14px; rotate:90deg; scale:1.15; } }
+@keyframes studio-voice { to { transform:scaleY(.35); } }
+@media (min-width:1400px) { .studio-layout { gap:100px; }.presence-scene { height:340px; }.presence-orb { width:230px; height:230px; }.presence-orbit { width:300px; height:300px; } }
+@media (max-width:900px) { .studio-layout { gap:32px; grid-template-columns:minmax(0,1fr) minmax(280px,.9fr); }.studio-presence h1 { font-size:28px; }.presence-coordinate { display:none; }.presence-talk > span { display:none; } }
+@media (max-width:767px) {
+  .dj-studio { padding:4px 0 20px; }.studio-toolbar { margin-bottom:14px; }.studio-brand { font-size:10px; letter-spacing:.1em; }.studio-brand small { display:none; }.studio-history { font-size:11px; padding-inline:12px; }
+  .studio-layout { display:flex; flex-direction:column; gap:16px; }.studio-presence,.studio-side { width:100%; }.presence-scene,.has-session .presence-scene { height:222px; margin-top:0; }.presence-orb { width:160px; height:160px; }.presence-fluid { width:140px; height:125px; }.presence-orbit { width:200px; height:200px; }.presence-orbit::after { inset:-14px; }.presence-caption { font-size:11px; }.studio-presence h1 { font-size:27px; }.presence-description { font-size:12px; margin-bottom:8px; }.presence-talk { margin-bottom:8px; font-size:12px; }.studio-composer input { font-size:16px; }.studio-feedback { min-height:18px; }
+  .studio-mood,.has-session .studio-mood { padding:16px; }.mood-map,.has-session .mood-map { height:174px; margin:14px 0 8px; }.studio-footer { margin-top:16px; }.studio-session { padding:16px; }.studio-session header button { min-height:44px; }.session-current { margin-top:8px; }.has-session .studio-scenes button { padding-inline:10px; }.studio-mood header { font-size:11px; }
+}
+@media (max-width:350px) { .studio-presence h1 { font-size:24px; }.studio-mood header { gap:5px; }.studio-mood header small { font-size:9px; }.mood-selection button { padding-inline:10px; font-size:11px; }.studio-footer { gap:4px; font-size:9px; }.studio-footer button { font-size:10px; } }
+@media (prefers-reduced-motion:reduce) { .presence-fluid,.voice-bars i { animation:none; }.presence-orb { transition:none; } }
+@media (min-width:768px) {
+  .studio-toolbar { margin-bottom:16px; }
+  .presence-scene,.has-session .presence-scene { height:250px; }
+  .studio-presence h1 { font-size:34px; line-height:1.3; }
+  .presence-description { margin-bottom:12px; }
+  .presence-talk { margin-bottom:8px; }
+  .studio-footer { margin-top:12px; }
+}
+@media (min-width:768px) and (max-height:900px) {
+  .dj-studio { padding-block:0 12px; }
+  .presence-scene,.has-session .presence-scene { height:210px; }
+  .presence-orb { width:178px; height:178px; }.presence-orbit { width:222px; height:222px; }
+  .studio-presence h1 { font-size:30px; }.studio-feedback { min-height:18px; }
+  .mood-map { height:200px; }
+  .has-session .studio-side { gap:12px; }.has-session .studio-session { padding:14px 18px; }
+  .has-session .session-current { margin-block:8px 14px; }.has-session .session-note { margin-top:8px; padding-top:8px; }
+  .has-session .mood-map { height:125px; margin-block:8px; }
+}
+.mood-toggle { width:100%; display:flex; align-items:center; justify-content:space-between; gap:10px; min-height:44px; font-size:12px; color:#b6ced9; text-align:left; }.mood-toggle > span { display:flex; gap:8px; align-items:center; }.mood-toggle[aria-expanded=true] > svg { transform:rotate(180deg); }
+.has-session .studio-mood { padding-block:8px; }
+@media (max-width:767px) {
+  .has-session .studio-presence { display:grid; grid-template-columns:110px minmax(0,1fr); column-gap:14px; align-items:center; text-align:left; }
+  .has-session .presence-caption { grid-column:1 / -1; justify-content:flex-start; margin-bottom:10px; }
+  .has-session .presence-scene { grid-column:1; grid-row:2 / 4; width:110px; height:130px; margin:0; }
+  .has-session .presence-orb { width:88px; height:88px; }.has-session .presence-orbit { width:106px; height:106px; }.has-session .presence-orbit::after { inset:-7px; }.has-session .presence-fluid { width:90px; height:86px; }.has-session .presence-voice > svg { width:24px; height:24px; }
+  .has-session .studio-presence h1 { grid-column:2; grid-row:2; font-size:23px; margin:0; align-self:end; text-wrap:wrap; }
+  .has-session .presence-description { grid-column:2; grid-row:3; margin:6px 0 0; align-self:start; }
+  .has-session .presence-talk { grid-column:1 / -1; margin:0 auto 6px; }.has-session .studio-composer,.has-session .studio-feedback { grid-column:1 / -1; }
+}
+/* 倾斜轨道保持朝向，行星以不同周期绕中心光球运行。 */
+.presence-orbit.solar-system { border:0; transform:none; pointer-events:none; }
+.presence-orbit.solar-system::after { content:none; }
+.solar-lane { position:absolute; inset:0; border:1px solid #a9e9db36; border-radius:50%; transform:rotate(-28deg) scaleY(.58); }
+.solar-lane-2 { inset:-9%; transform:rotate(38deg) scaleY(.65); border-color:#b4b6ef2b; }
+.solar-lane-3 { inset:7%; transform:rotate(-68deg) scaleY(.7); border-color:#8ec7ed29; }
+.solar-revolution { position:absolute; inset:0; border-radius:50%; animation:solar-revolve 24s linear infinite; animation-play-state:paused; }
+.solar-lane-2 .solar-revolution { animation-duration:38s; animation-delay:-12s; animation-direction:reverse; }
+.solar-lane-3 .solar-revolution { animation-duration:52s; animation-delay:-31s; }
+.solar-planet { position:absolute; left:50%; top:0; width:9px; height:9px; margin:-4.5px; border-radius:50%; background:radial-gradient(circle at 30% 25%,#f0fff5,#90d9c7 65%,#3d817b); box-shadow:0 0 12px #a9ffda66; }
+.solar-lane-2 .solar-planet { width:7px; height:7px; margin:-3.5px; background:radial-gradient(circle at 30% 25%,#f1ecff,#a399dd 65%,#625084); box-shadow:0 0 12px #b7a6f566; }
+.solar-lane-3 .solar-planet { width:5px; height:5px; margin:-2.5px; background:#b5dbf2; box-shadow:0 0 10px #9bd4ff66; }
+.orbits-on .solar-revolution { animation-play-state:running; }
+@keyframes solar-revolve { from { rotate:0deg; } to { rotate:360deg; } }
+@media (max-width:767px) { .solar-planet { width:7px; height:7px; margin:-3.5px; }.has-session .solar-planet { width:5px; height:5px; margin:-2.5px; }.has-session .solar-lane-2 .solar-planet,.has-session .solar-lane-3 .solar-planet { width:4px; height:4px; margin:-2px; } }
+@media (prefers-reduced-motion:reduce) { .solar-revolution { animation:none; }.solar-lane-2 .solar-revolution { rotate:120deg; }.solar-lane-3 .solar-revolution { rotate:235deg; } }

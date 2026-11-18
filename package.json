@@ -9,7 +9,9 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "server": "npm --prefix server run dev",
-    "music-api": "PORT=3100 npm --prefix music-api start"
+    "music-api": "PORT=3100 npm --prefix music-api start",
+    "dev:all": "node scripts/dev-all.mjs",
+    "test": "node scripts/check-player.mjs && node scripts/check-dj.mjs && node scripts/check-dj-controller.mjs && node scripts/check-dj-diversity.mjs && node scripts/check-voice.mjs && node scripts/check-weather.mjs && node scripts/check-canvas.mjs"
   },
   "dependencies": {
     "clsx": "^2.1.1",

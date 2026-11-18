@@ -1,7 +1,9 @@
+import { useVisualMotion } from '../lib/useVisualMotion';
 import { useEffect, useMemo, useRef } from 'react';
 import { Play, Pause, Maximize2, Minimize2 } from 'lucide-react';
 import { usePlayer, useCurrentTrack } from '../store/usePlayer';
 import { getAnalyser } from '../lib/audioVisualizer';
+import { fitCanvas, ringGeometry } from '../lib/canvasLayout';
 
 type Particle = {
   x: number; y: number;
@@ -16,17 +18,21 @@ export function Discover() {
   const waveCanvasRef = useRef<HTMLCanvasElement>(null);
   const particleCanvasRef = useRef<HTMLCanvasElement>(null);
   const lyricsRef = useRef<HTMLDivElement>(null);
+  const coverRef = useRef<HTMLDivElement>(null);
   const rafRef = useRef<number>(0);
 
   const current = useCurrentTrack();
   const isPlaying = usePlayer(s => s.isPlaying);
+  const nowPlayingOpen = usePlayer(s => s.nowPlayingOpen);
+  const animate = useVisualMotion(isPlaying && !nowPlayingOpen);
   const togglePlay = usePlayer(s => s.togglePlay);
+  const palette = usePlayer(s => s.palette);
   const immersive = usePlayer(s => s.immersive);
   const setImmersive = usePlayer(s => s.setImmersive);
   const progress = usePlayer(s => s.progress);
   const customLyrics = usePlayer(s => s.customLyrics);
 
-  const lyrics = (current && customLyrics[current.id]) || current?.lyrics || [];
+  const lyrics = useMemo(() => (current && customLyrics[current.id]) || current?.lyrics || [], [current, customLyrics]);
 
   // 计算当前应高亮的歌词索引
   const activeIdx = useMemo(() => {
@@ -46,7 +52,7 @@ export function Discover() {
     const target = wrap.querySelector<HTMLDivElement>(`[data-idx="${activeIdx}"]`);
     if (!target) return;
     const offset = target.offsetTop - wrap.clientHeight / 2 + target.clientHeight / 2;
-    wrap.scrollTo({ top: offset, behavior: 'smooth' });
+    wrap.scrollTo({ top: offset, behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
   }, [activeIdx]);
 
   // 主可视化循环
@@ -59,24 +65,21 @@ export function Discover() {
     const waveCtx = wave.getContext('2d')!;
     const partCtx = part.getContext('2d')!;
 
-    const setupCanvas = (cv: HTMLCanvasElement) => {
-      const dpr = window.devicePixelRatio || 1;
-      const rect = cv.getBoundingClientRect();
-      cv.width = rect.width * dpr;
-      cv.height = rect.height * dpr;
-      cv.getContext('2d')!.setTransform(dpr, 0, 0, dpr, 0, 0);
-      return rect;
-    };
+    const setupCanvas = (cv: HTMLCanvasElement) => fitCanvas(cv, cv.getContext('2d')!);
     let ringRect = setupCanvas(ring);
     let waveRect = setupCanvas(wave);
     let partRect = setupCanvas(part);
+    let coverRadius = (coverRef.current?.querySelector('img')?.clientWidth || 200) / 2;
 
     const onResize = () => {
       ringRect = setupCanvas(ring);
       waveRect = setupCanvas(wave);
       partRect = setupCanvas(part);
+      coverRadius = (coverRef.current?.querySelector('img')?.clientWidth || 200) / 2;
     };
-    window.addEventListener('resize', onResize);
+    const observer = new ResizeObserver(() => { onResize(); if (!animate) draw(); });
+    [ring, wave, part].forEach(cv => observer.observe(cv));
+    if (coverRef.current) observer.observe(coverRef.current);
 
     const particles: Particle[] = [];
     let lastBass = 0;
@@ -140,16 +143,15 @@ export function Discover() {
 
     const drawIdle = (accent: number[]) => {
       ringCtx.clearRect(0, 0, ringRect.width, ringRect.height);
-      const cx = ringRect.width / 2, cy = ringRect.height / 2;
-      const baseR = Math.min(cx, cy) * 0.55;
+      const { cx, cy, baseRadius, amplitude } = ringGeometry(ringRect.width, ringRect.height, coverRadius);
       ringCtx.strokeStyle = `rgba(${accent.join(',')}, 0.35)`;
       ringCtx.lineWidth = 1.5;
       const bars = 96;
       for (let i = 0; i < bars; i++) {
         const a = (i / bars) * Math.PI * 2;
         const v = (Math.sin(phase + i * 0.2) + 1) / 2;
-        const r1 = baseR + 6;
-        const r2 = baseR + 6 + v * 18;
+        const r1 = baseRadius;
+        const r2 = baseRadius + v * Math.min(18, amplitude);
         ringCtx.beginPath();
         ringCtx.moveTo(cx + Math.cos(a) * r1, cy + Math.sin(a) * r1);
         ringCtx.lineTo(cx + Math.cos(a) * r2, cy + Math.sin(a) * r2);
@@ -167,17 +169,17 @@ export function Discover() {
       phase += 0.04;
     };
 
+    const accent = readVar('--accent', [120, 180, 255]);
+    const accent2 = readVar('--accent-2', [220, 120, 255]);
+    let freq = new Uint8Array(0), time = new Uint8Array(0);
     const draw = () => {
-      const accent = readVar('--accent', [120, 180, 255]);
-      const accent2 = readVar('--accent-2', [220, 120, 255]);
-      const analyser = getAnalyser();
+      const analyser = animate ? getAnalyser() : null;
       if (!analyser) {
         drawIdle(accent);
         updateAndDrawParticles(accent, accent2);
       } else {
         const N = analyser.frequencyBinCount;
-        const freq = new Uint8Array(N);
-        const time = new Uint8Array(N);
+        if (freq.length !== N) { freq = new Uint8Array(N); time = new Uint8Array(N); }
         analyser.getByteFrequencyData(freq);
         analyser.getByteTimeDomainData(time);
 
@@ -193,15 +195,14 @@ export function Discover() {
 
         // 圆形径向频谱
         ringCtx.clearRect(0, 0, ringRect.width, ringRect.height);
-        const cx = ringRect.width / 2, cy = ringRect.height / 2;
-        const baseR = Math.min(cx, cy) * 0.55;
+        const { cx, cy, baseRadius, amplitude } = ringGeometry(ringRect.width, ringRect.height, coverRadius);
         const bars = 128;
         for (let i = 0; i < bars; i++) {
           const idx = Math.floor((i / bars) * (N * 0.7));
           const v = freq[idx] / 255;
           const a = (i / bars) * Math.PI * 2 - Math.PI / 2;
-          const r1 = baseR + 4;
-          const r2 = baseR + 4 + v * Math.min(cx, cy) * 0.55;
+          const r1 = baseRadius;
+          const r2 = baseRadius + v * amplitude;
           const t = i / bars;
           const r = Math.round(accent[0] * (1 - t) + accent2[0] * t);
           const g = Math.round(accent[1] * (1 - t) + accent2[1] * t);
@@ -236,18 +237,18 @@ export function Discover() {
         // 粒子
         updateAndDrawParticles(accent, accent2);
       }
-      rafRef.current = requestAnimationFrame(draw);
+      if (animate) rafRef.current = requestAnimationFrame(draw);
     };
     draw();
 
     return () => {
       cancelAnimationFrame(rafRef.current);
-      window.removeEventListener('resize', onResize);
+      observer.disconnect();
     };
-  }, []);
+  }, [animate, palette]);
 
   return (
-    <main className={`main glass-soft discover ${immersive ? 'immersive' : ''}`}>
+    <section className={`main glass-soft discover ${immersive ? 'immersive' : ''}`}>
       <div className="discover-head">
         <div>
           <div className="greeting">DISCOVER · 沉浸聆听</div>
@@ -261,9 +262,10 @@ export function Discover() {
       </div>
 
       <div className="vis-stage">
-        <canvas ref={particleCanvasRef} className="vis-particles" />
-        <canvas ref={ringCanvasRef} className="vis-ring" />
-        <div className="vis-center">
+        <div className="vis-art">
+        <canvas ref={particleCanvasRef} className="vis-particles" aria-hidden="true" />
+        <canvas ref={ringCanvasRef} className="vis-ring" aria-hidden="true" />
+        <div className="vis-center" ref={coverRef}>
           {current && (
             <img
               className={`disc ${isPlaying ? 'spinning' : ''}`}
@@ -276,6 +278,7 @@ export function Discover() {
           </button>
         </div>
 
+        </div>
         {/* 歌词面板 */}
         {lyrics.length > 0 && (
           <div className="lyrics-panel" ref={lyricsRef}>
@@ -296,20 +299,9 @@ export function Discover() {
         )}
       </div>
 
-      <canvas ref={waveCanvasRef} className="vis-wave" />
+      <canvas ref={waveCanvasRef} className="vis-wave" aria-hidden="true" />
 
-      <div className="vis-tip">
-        ✨ 提示：右上角点「沉浸模式」会隐藏左右栏；低频能量大时会爆出粒子；歌词随播放进度自动滚动。
-        <div className="hotkeys">
-          <kbd>Space</kbd> 播放/暂停
-          <kbd>←</kbd>/<kbd>→</kbd> 切歌
-          <kbd>↑</kbd>/<kbd>↓</kbd> 音量
-          <kbd>F</kbd> 沉浸
-          <kbd>D</kbd> 切发现/首页
-          <kbd>Esc</kbd> 退出沉浸
-        </div>
-      </div>
-    </main>
+    </section>
   );
 }
 

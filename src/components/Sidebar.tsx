@@ -1,203 +1,114 @@
-import { Music2, Compass, Heart, Library, Sparkles, Plus, Radio, FileText, CloudDownload, X, Import } from 'lucide-react';
-import { PLAYLISTS } from '../data/tracks';
+import { Dialog } from './Dialog';
+import { Music2, Heart, Library, Sparkles, Plus, Radio, FileText, X, Import } from 'lucide-react';
 import { usePlayer } from '../store/usePlayer';
-import { useRef, useState } from 'react';
+import { useRef, useState, useEffect } from 'react';
 import type { Track } from '../types';
 import { parseLRC } from '../lib/lrc';
+import { saveAudioFile } from '../lib/localLibrary';
+import { searchTracks } from '../services/api';
+import localCover from '../assets/hero.png';
 
-export function Sidebar() {
-  const addImported = usePlayer(s => s.addImportedTracks);
+type MatchRow = { query: string; candidates: Track[]; selected: string; error?: string };
+export function Sidebar({ desktop = false }: { desktop?: boolean }) {
   const view = usePlayer(s => s.view);
-  const setView = usePlayer(s => s.setView);
-  const setLyrics = usePlayer(s => s.setLyrics);
-  const pushMessage = usePlayer(s => s.pushMessage);
-  const fileRef = useRef<HTMLInputElement | null>(null);
-  const lrcRef = useRef<HTMLInputElement | null>(null);
+  const playlists = usePlayer(s => s.playlists);
+  const favorites = usePlayer(s => s.favoriteIds);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const lrcRef = useRef<HTMLInputElement>(null);
+  const requestRef = useRef<AbortController | null>(null);
   const [showImportModal, setShowImportModal] = useState(false);
   const [importText, setImportText] = useState('');
-  const [, setImportCount] = useState(0);
-
-  // ── 解析歌单文本 ──
-  function parsePlaylistText(text: string): Track[] {
-    const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
-    const tracks: Track[] = [];
-    for (const line of lines) {
-      // 跳过纯数字行、标题行
-      if (/^\d+$/.test(line)) continue;
-      if (line.startsWith('#') || line.startsWith('//')) continue;
-
-      // 去除行号前缀："1. ", "01 ", "1、" 等
-      const clean = line.replace(/^\d+[.、。 ]+/, '');
-
-      let title = '';
-      let artist = '未知艺术家';
-
-      // 格式：歌名 - 艺术家 / 歌名 — 艺术家
-      const dashMatch = clean.match(/^(.+?)\s*[\-—–]\s*(.+)$/);
-      if (dashMatch) {
-        title  = dashMatch[1].trim();
-        artist = dashMatch[2].trim();
-      } else {
-        title = clean;
+  const [matches, setMatches] = useState<MatchRow[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState('');
+  useEffect(() => () => requestRef.current?.abort(), []);
+  const state = () => usePlayer.getState();
+  const closeModal = () => { requestRef.current?.abort(); setBusy(false); setShowImportModal(false); };
+  const matchPlaylist = async () => {
+    const lines = [...new Set(importText.split('\n').map(line => line.trim().replace(/^\d+[.、。 ]+/, '')).filter(line => line && !line.startsWith('#')))];
+    if (!lines.length) return;
+    if (lines.length > 20) { setNotice('每次最多匹配 20 首，请分批导入。'); return; }
+    requestRef.current?.abort();
+    const ctrl = new AbortController(); requestRef.current = ctrl;
+    setBusy(true); setMatches([]); setNotice('正在搜索原曲，完成后请选择对应版本。');
+    const rows: MatchRow[] = [];
+    for (const query of lines) {
+      if (ctrl.signal.aborted) return;
+      try {
+        const result = await searchTracks('netease', query.replace(/\s+[—–-]\s+/g, ' '), 5, ctrl.signal);
+        rows.push({ query, candidates: result.tracks, selected: '' });
+      } catch (error) {
+        if (ctrl.signal.aborted) return;
+        rows.push({ query, candidates: [], selected: '', error: error instanceof Error ? error.message : '匹配失败' });
       }
-      if (!title) continue;
-
-      // 用 hash 生成稳定 ID 和封面
-      const seed = hashStr(title + artist);
-      const id = `nc_${seed}`;
-      // 避免重复
-      if (tracks.some(t => t.id === id)) continue;
-
-      tracks.push({
-        id,
-        title,
-        artist,
-        cover: `https://picsum.photos/seed/${encodeURIComponent(title)}/600/600`,
-        duration: 45,
-        tags: ['imported', 'CN'],
-      });
+      if (ctrl.signal.aborted) return;
+      setMatches([...rows]); setNotice(`已匹配 ${rows.length} / ${lines.length} 首，请确认歌曲与歌手。`);
     }
-    return tracks;
-  }
-
-  function hashStr(s: string): string {
-    let h = 0;
-    for (let i = 0; i < s.length; i++) h = ((h << 5) - h + s.charCodeAt(i)) | 0;
-    return Math.abs(h).toString(36);
-  }
-
-  const handlePlaylistImport = () => {
-    const tracks = parsePlaylistText(importText);
-    if (!tracks.length) {
-      pushMessage({ id: `m${Date.now()}`, role: 'ai', text: '没解析到歌曲，请检查格式：每行一首，格式为「歌名 - 艺术家」' });
-      return;
+    setBusy(false);
+  };
+  const confirmMatches = () => {
+    const tracks = matches.flatMap(row => row.candidates.filter(t => t.id === row.selected));
+    if (!tracks.length) return;
+    state().registerRemoteTracks(tracks);
+    const id = state().createPlaylist('导入的歌单');
+    tracks.forEach(t => state().addToPlaylist(id, t.id));
+    setShowImportModal(false); state().openPlaylist(id);
+  };
+  const importFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []); e.target.value = '';
+    setBusy(true); setNotice('正在保存音频文件…');
+    const tracks: Track[] = [];
+    for (const file of files) {
+      const id = `local_${crypto.randomUUID()}`;
+      try {
+        await saveAudioFile(id, file);
+        tracks.push({ id, title: file.name.replace(/\.(mp3|m4a|wav|flac|ogg)$/i, ''), artist: '本地导入',
+          cover: localCover, src: URL.createObjectURL(file), duration: 0, source: 'local', tags: ['local'] });
+      } catch {
+        usePlayer.setState({ storageError: '音频文件未能保存，请检查浏览器存储空间后重新导入。' });
+        break;
+      }
     }
-    addImported(tracks);
-    setImportCount(tracks.length);
-    pushMessage({
-      id: `m${Date.now()}`, role: 'ai',
-      text: `🎵 已导入 ${tracks.length} 首歌曲到曲库！点击歌曲即可播放（使用本地合成音）`,
-    });
-    setImportText('');
-    setShowImportModal(false);
+    if (tracks.length) { state().addImportedTracks(tracks); state().setView('library'); }
+    setNotice(`已保存 ${tracks.length} 首本地音乐`); setBusy(false);
   };
-
-  const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files ?? []);
-    const newTracks: Track[] = files.map((f, i) => ({
-      id: `local_${Date.now()}_${i}`,
-      title: f.name.replace(/\.(mp3|m4a|wav|flac|ogg)$/i, ''),
-      artist: '本地导入',
-      cover: `https://picsum.photos/seed/${encodeURIComponent(f.name)}/600/600`,
-      src: URL.createObjectURL(f),
-      duration: 0,
-      tags: ['local'],
-    }));
-    if (newTracks.length) addImported(newTracks);
-    e.target.value = '';
-  };
-
-  const handleLRC = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = '';
+  const importLyrics = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]; e.target.value = '';
     if (!file) return;
-    const { queue, currentIndex } = usePlayer.getState();
-    if (currentIndex < 0) {
-      pushMessage({ id: `m${Date.now()}`, role: 'ai', text: '先选一首歌再导入歌词哦～' });
-      return;
-    }
-    const text = await file.text();
-    const lines = parseLRC(text);
-    if (!lines.length) {
-      pushMessage({ id: `m${Date.now()}`, role: 'ai', text: '没解析出有效的 LRC 时间戳，文件格式可能不对。' });
-      return;
-    }
-    const trackId = queue[currentIndex];
-    setLyrics(trackId, lines);
-    pushMessage({ id: `m${Date.now()}`, role: 'ai', text: `🎼 歌词已导入：${file.name}（${lines.length} 行）` });
+    const s = state();
+    if (s.currentIndex < 0) { setNotice('请先选择要导入歌词的歌曲。'); return; }
+    const lines = parseLRC(await file.text());
+    if (!lines.length) { setNotice('文件没有有效的 LRC 时间戳。'); return; }
+    s.setLyrics(s.queue[s.currentIndex], lines); setNotice(`已导入 ${lines.length} 行歌词`);
   };
-
-  return (
-    <aside className="sidebar glass">
-      <div className="brand">
-        <div className="brand-dot" />
-        <span>Aurora Music</span>
-      </div>
-
-      <nav className="nav">
-        <div className={`nav-item ${view === 'home' ? 'active' : ''}`} onClick={() => setView('home')}><Sparkles size={16}/> 今日推荐</div>
-        <div className={`nav-item ${view === 'discover' ? 'active' : ''}`} onClick={() => setView('discover')}><Radio size={16}/> 发现 · 频谱</div>
-        <div className="nav-item"><Compass size={16}/> 环球漫游</div>
-        <div className="nav-item"><Music2 size={16}/> 全部曲库</div>
-        <div className="nav-item"><Heart size={16}/> 我的收藏</div>
-        <div className="nav-item"><Library size={16}/> 我的歌单</div>
-      </nav>
-
-      <div className="section-title">歌单</div>
-      <div className="nav" style={{ overflow: 'auto', flex: 1 }}>
-        {PLAYLISTS.map(p => (
-          <div key={p.id} className="playlist-item">
-            <span style={{
-              width: 22, height: 22, borderRadius: 6,
-              background: `url(${p.cover}) center/cover`,
-            }} />
-            {p.name}
-          </div>
-        ))}
-      </div>
-
-      <button className="import-btn" style={{background:'rgb(var(--accent)/0.18)',borderColor:'rgb(var(--accent)/0.4)'}} onClick={() => setShowImportModal(true)}>
-        <CloudDownload size={16}/> 导入文字歌单
-      </button>
-      <button className="import-btn" onClick={() => fileRef.current?.click()}>
-        <Plus size={16}/> 导入本地 MP3
-      </button>
-      <button className="import-btn lrc-btn" onClick={() => lrcRef.current?.click()} title="为当前播放的歌曲导入 .lrc 歌词">
-        <FileText size={16}/> 导入 LRC 歌词
-      </button>
-      <input
-        ref={fileRef}
-        type="file"
-        accept="audio/*"
-        multiple
-        onChange={handleImport}
-        style={{ display: 'none' }}
-      />
-      <input
-        ref={lrcRef}
-        type="file"
-        accept=".lrc,text/plain"
-        onChange={handleLRC}
-        style={{ display: 'none' }}
-      />
-      {/* 文字歌单导入 Modal */}
-      {showImportModal && (
-        <div className="modal-overlay" onClick={() => setShowImportModal(false)}>
-          <div className="modal-box" onClick={e => e.stopPropagation()}>
-            <div className="modal-head">
-              <Import size={16}/> 导入文字歌单
-              <button className="modal-close" onClick={() => setShowImportModal(false)}><X size={14}/></button>
-            </div>
-            <p className="modal-tip">
-              从网易云 / 其他平台复制歌单文字，每行一首，支持：<br/>
-              <code>歌名 - 艺术家</code> 或 <code>1. 歌名 - 艺术家</code>
-            </p>
-            <textarea
-              className="modal-textarea"
-              placeholder={"示例：\n1. 晴天 - 周杰伦\n2. 我记得 - 赵雷\n告白气球 - 周杰伦"}
-              value={importText}
-              onChange={e => setImportText(e.target.value)}
-              rows={10}
-            />
-            <div className="modal-footer">
-              <span className="modal-hint">
-                {importText ? `已识别约 ${parsePlaylistText(importText).length} 首` : '粘贴歌单文字'}
-              </span>
-              <button className="modal-ok" onClick={handlePlaylistImport}>导入曲库</button>
-            </div>
-          </div>
-        </div>
-      )}
-    </aside>
-  );
+  const nav = [
+    { id: 'home' as const, label: '专属 DJ', Icon: Sparkles },
+    { id: 'search' as const, label: '手动找歌', Icon: Music2 },
+    { id: 'discover' as const, label: '发现 · 频谱', Icon: Radio },
+    { id: 'djplaylists' as const, label: 'AI DJ 歌单', Icon: Sparkles },
+    { id: 'library' as const, label: '我的曲库', Icon: Music2 },
+    { id: 'favorites' as const, label: `我的收藏 · ${favorites.length}`, Icon: Heart },
+    { id: 'playlists' as const, label: '我的歌单', Icon: Library },
+  ];
+  return <aside className="sidebar glass">
+    <div className="brand"><div className="brand-dot"/><span>{desktop ? '你的音乐库' : 'Aurora Music'}</span></div>
+    <nav className="nav">{nav.filter(item => !desktop || !['home', 'search', 'discover'].includes(item.id)).map(({ id, label, Icon }) => <button key={id} className={`nav-item ${view === id ? 'active' : ''}`} onClick={() => state().setView(id)}><Icon size={16}/>{label}</button>)}</nav>
+    <div className="section-title">歌单</div>
+    <div className="nav" style={{ overflow: 'auto', flex: 1 }}>{playlists.length ? playlists.map(p => <button key={p.id} className="playlist-item" onClick={() => state().openPlaylist(p.id)}><Library size={16}/>{p.name}<small>{p.trackIds.length}</small></button>) : <p className="subtle">把喜欢的歌加入一张歌单。</p>}</div>
+    {notice && <p className="import-notice" role="status">{notice}</p>}
+    <button className="import-btn" onClick={() => { setShowImportModal(true); setNotice(''); }}><Import size={16}/>导入文字歌单</button>
+    <button className="import-btn" disabled={busy} onClick={() => fileRef.current?.click()}><Plus size={16}/>{busy ? '正在处理…' : '导入本地音频'}</button>
+    <button className="import-btn" onClick={() => lrcRef.current?.click()}><FileText size={16}/>导入 LRC 歌词</button>
+    <input ref={fileRef} type="file" accept="audio/*" multiple onChange={importFiles} hidden/>
+    <input ref={lrcRef} type="file" accept=".lrc,text/plain" onChange={importLyrics} hidden/>
+    {showImportModal && <Dialog label="导入文字歌单" onClose={closeModal} backdropClass="modal-overlay" panelClass="modal-box">
+      <div className="modal-head"><Import size={16}/>导入文字歌单<button title="关闭导入" className="modal-close" onClick={closeModal}><X size={16}/></button></div>
+      <p className="modal-tip">每行一首「歌名 - 歌手」。先搜索原曲，再确认版本；不会用合成音替代歌曲。</p>
+      <textarea className="modal-textarea" aria-label="歌单文字" value={importText} onChange={e => { setImportText(e.target.value); setMatches([]); }} disabled={busy} placeholder={'晴天 - 周杰伦\nRunaway - Kanye West'} rows={4}/>
+      {notice && <p className="subtle" role="status">{notice}</p>}
+      <div className="match-list">{matches.map((row, i) => <label key={row.query}><b>{row.query}</b>{row.candidates.length ? <select aria-label={`确认原曲 ${row.query}`} value={row.selected} onChange={e => setMatches(rows => rows.map((r, n) => n === i ? { ...r, selected: e.target.value } : r))}>
+        <option value="">跳过 / 请选择原曲</option>{row.candidates.map(t => <option key={t.id} value={t.id}>{t.title} · {t.artist} · {t.album}</option>)}</select> : <span>{row.error ?? '没有找到原曲，可修改文字后重新匹配'}</span>}</label>)}</div>
+      <div className="modal-footer"><button className="modal-ok" disabled={busy || !importText.trim()} onClick={matchPlaylist}>{busy ? '正在匹配…' : '搜索原曲'}</button><button className="modal-ok" disabled={busy || !matches.some(row => row.selected)} onClick={confirmMatches}>确认导入 {matches.filter(row => row.selected).length} 首</button></div>
+    </Dialog>}
+  </aside>;
 }
