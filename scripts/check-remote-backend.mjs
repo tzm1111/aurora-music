@@ -26,16 +26,21 @@ do {
 } while (true);
 assert.equal(healthData.status, 'ok');
 console.log('通过：公开 API 与 GitHub Pages 跨域访问。');
-const search = await request('/api/music/search?source=netease&q=Laufey&limit=5');
-assert.equal(search.status, 200, '网易云搜索失败');
-const songs = await search.json();
-assert.ok(songs.success && songs.tracks.length > 0, '网易云未返回歌曲');
 let playable;
-for (const song of songs.tracks) {
-  const response = await request('/api/music/playback/netease/' + song.sourceId);
-  if (response.ok) { playable = await response.json(); break; }
-  const failure = await response.json().catch(() => ({}));
-  console.log('音源检查失败:', song.sourceId, 'HTTP', response.status, failure.error?.code || 'UNKNOWN');
+// 覆盖不同曲库，保留每个失败样本；单一歌手的地区版权不能代表整个播放器。
+for (const query of ['Laufey', '陈奕迅', '久石譲']) {
+  const search = await request('/api/music/search?' + new URLSearchParams({ source: 'netease', q: query, limit: '5' }));
+  const songs = await search.json();
+  assert.equal(search.status, 200, '网易云搜索失败：' + (songs.error?.message || search.status));
+  assert.ok(songs.success && songs.tracks.length > 0, '网易云未返回歌曲');
+  console.log('搜索返回:', query, songs.tracks.length, '首');
+  for (const song of songs.tracks) {
+    const response = await request('/api/music/playback/netease/' + song.sourceId);
+    if (response.ok) { playable = await response.json(); console.log('可播放样本:', query, song.sourceId); break; }
+    const failure = await response.json().catch(() => ({}));
+    console.log('音源检查失败:', song.sourceId, 'HTTP', response.status, failure.error?.code || 'UNKNOWN');
+  }
+  if (playable) break;
 }
 assert.ok(playable?.src, '未获得可播放歌曲');
 const audio = await request(playable.src, { headers: { Range: 'bytes=0-1023' } });
