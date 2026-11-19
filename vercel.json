@@ -2,6 +2,7 @@
   "installCommand": "npm ci && npm --prefix server ci --omit=dev && npm --prefix music-api ci --omit=dev",
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
+  "regions": ["hkg1"],
   "functions": {
     "api/index.js": {
       "maxDuration": 60,

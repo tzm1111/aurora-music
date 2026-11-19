@@ -84,6 +84,10 @@ const sdkPath = require.resolve('../music-api/node_modules/NeteaseCloudMusicApi/
 const oldSdk = require.cache[sdkPath];
 let registrations = 0;
 require.cache[sdkPath] = { exports: {
+  cloudsearch: async params => {
+    assert.equal(params.cookie, '');
+    return { status: 200, body: { code: 200, result: { songs: [], songCount: 0 } } };
+  },
   register_anonimous: async () => { registrations++; return { body: { cookie: 'MUSIC_A=test-anonymous;' } }; },
   song_url_v1: async params => {
     assert.equal(params.cookie.MUSIC_A, 'test-anonymous');
@@ -93,6 +97,9 @@ require.cache[sdkPath] = { exports: {
 } };
 process.env.NETEASE_EMBEDDED = '1';
 try {
+  const { search } = await import('../server/src/services/neteaseService.js');
+  await search('test');
+  assert.equal(registrations, 0, '歌曲搜索不能依赖游客注册成功');
   const [a, b] = await Promise.all([getPlayability(['201']), getPlayability(['202'])]);
   assert.ok(a.get('201')?.url && b.get('202')?.url);
   assert.equal(registrations, 1);

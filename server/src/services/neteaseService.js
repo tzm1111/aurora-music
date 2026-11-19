@@ -12,9 +12,11 @@ function embeddedCookie(cookie, timeoutMs) {
       const anonymous = cookieToJson(result.body?.cookie || '');
       if (!anonymous.MUSIC_A) throw new Error('音乐服务游客会话初始化失败');
       return { MUSIC_A: anonymous.MUSIC_A };
-    }).catch(() => {
+    }).catch(error => {
       anonymousSetup = undefined;
-      throw new Error('音乐服务游客会话暂时不可用');
+      console.warn('音乐游客初始化失败:', { errorType: error.name || 'ProviderError', upstreamCode: error.body?.code || error.status || error.code || 'UNKNOWN' });
+      // 不让游客注册失败拖垮原本可用的接口；交由 SDK 默认匿名身份继续尝试。
+      return '';
     });
   }
   return anonymousSetup;
@@ -46,7 +48,8 @@ async function apiGet(path, params = {}, timeoutMs = 8000, cookie = '', allowedC
     let timer;
     try {
       const result = await Promise.race([
-        embeddedCookie(cookie, timeoutMs).then(sessionCookie => embeddedApi[method]({ ...params, cookie: sessionCookie, timeout: timeoutMs })),
+        (path === '/song/url/v1' || path === '/song/url' ? embeddedCookie(cookie, timeoutMs) : Promise.resolve(cookie))
+          .then(sessionCookie => embeddedApi[method]({ ...params, cookie: sessionCookie, timeout: timeoutMs })),
         new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('音乐接口超时')), timeoutMs); }),
       ]);
       const json = result.body;
