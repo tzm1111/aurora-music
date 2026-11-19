@@ -251,13 +251,11 @@ export function Discover() {
     <section className={`main glass-soft discover ${immersive ? 'immersive' : ''}`}>
       <div className="discover-head">
         <div>
-          <div className="greeting">DISCOVER · 沉浸聆听</div>
-          <h1>{current ? current.title : '挑一首歌开始'}</h1>
-          <p>{current ? `${current.artist}${current.album ? ' · ' + current.album : ''}` : '从首页选歌后回到这里，感受频谱'}</p>
+          <h1>{current ? current.title : '沉浸聆听'}</h1>
+          {current && <p>{current.artist}</p>}
         </div>
         <button className="immersive-btn" onClick={() => setImmersive(!immersive)} title={immersive ? '退出沉浸' : '进入全屏沉浸'}>
           {immersive ? <Minimize2 size={18}/> : <Maximize2 size={18}/>}
-          <span>{immersive ? '退出沉浸' : '沉浸模式'}</span>
         </button>
       </div>
 

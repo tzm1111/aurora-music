@@ -2,7 +2,7 @@ import { useEffect, useCallback, useState } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import { Dialog } from './components/Dialog';
 import { useAutoDJ } from './lib/useAutoDJ';
-import { Menu, UserRound, Sparkles, Music2, Radio } from 'lucide-react';
+import { Menu, UserRound, Sparkles, Music2, Radio, CircleAlert, X } from 'lucide-react';
 import { Sidebar } from './components/Sidebar';
 import { MainView } from './components/MainView';
 import { Discover } from './components/Discover';
@@ -127,7 +127,7 @@ export default function App() {
                 { id: 'discover' as const, label: '发现 · 频谱', Icon: Radio },
               ].map(({ id, label, Icon }) => <button key={id} className={`topbar-btn ${view === id ? 'active' : ''}`} title={label} aria-label={label} aria-current={view === id ? 'page' : undefined} onClick={() => usePlayer.getState().setView(id)}><Icon size={18}/></button>)}
             </nav>
-            <button className="account-button" onClick={() => setAccountOpen(true)} title="网易云账号"><UserRound size={16}/><span>{account.loggedIn ? account.profile?.nickname || '网易云已连接' : '连接网易云'}</span></button>
+            <button className="account-button" onClick={() => setAccountOpen(true)} title="网易云账号" aria-label={account.loggedIn ? `网易云账号：${account.profile?.nickname || '已连接'}` : '连接网易云账号'}><UserRound size={18}/>{account.loggedIn && <i className="account-connected"/>}</button>
           </div>
         </header>
       )}
@@ -154,9 +154,9 @@ export default function App() {
       <AudioEngine />
       {accountOpen && <AccountDialog account={account} onChange={updateAccount} onClose={() => setAccountOpen(false)}/>}
       {queueOpen && <QueuePanel />}
-      {storageError && <div className="storage-warning" role="alert">{storageError}<button onClick={() => usePlayer.setState({ storageError: null })}>关闭</button></div>}
-      {audioError && <div className="audio-err" role="alert"><span>{audioError}</span>
-        <div className="error-actions"><button onClick={() => usePlayer.getState().retry()}>重试播放</button><button onClick={() => usePlayer.getState().next()}>换一首</button><button onClick={() => setAudioError(null)}>关闭</button></div>
+      {storageError && <div className="storage-warning compact-feedback"><details><summary aria-label="查看存储错误详情"><CircleAlert size={16}/></summary><p>{storageError}</p></details><button aria-label="关闭存储提示" onClick={() => usePlayer.setState({ storageError: null })}><X size={16}/></button></div>}
+      {audioError && <div className="audio-err compact-feedback"><details><summary aria-label="查看播放错误详情"><CircleAlert size={16}/></summary><p>{audioError}</p></details>
+        <div className="error-actions"><button onClick={() => usePlayer.getState().retry()}>重试</button><button onClick={() => usePlayer.getState().next()}>换一首</button><button aria-label="关闭播放提示" onClick={() => setAudioError(null)}><X size={16}/></button></div>
       </div>}
     </div>
   );

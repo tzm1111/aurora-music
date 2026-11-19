@@ -7,7 +7,7 @@ import type { WeatherLocation } from '../store/useLocalWeather';
 import { apiRequest } from '../services/api';
 import { useDialogFocus } from '../lib/useDialogFocus';
 const ICONS = { sunny: Sun, cloudy: Cloud, rainy: CloudRain, snowy: Snowflake, night: Moon };
-const placeLabel = (location: WeatherLocation | null) => location ? [...new Set([location.city, location.district || location.name].filter(Boolean))].join(' · ') : '未设置位置';
+const placeLabel = (location: WeatherLocation | null) => location ? [...new Set([location.city, location.district || location.name].filter(Boolean))].join(' · ') : '位置';
 
 function WeatherPopover({ anchor, onClose }: { anchor: RefObject<HTMLButtonElement | null>; onClose: () => void }) {
   const { data, location, busy, error, locationError } = useLocalWeather();
@@ -35,20 +35,20 @@ function WeatherPopover({ anchor, onClose }: { anchor: RefObject<HTMLButtonEleme
     setSearching(true); setCityError(''); setCities([]);
     try {
       const result = await apiRequest<{ cities: WeatherLocation[] }>('/api/weather/cities?q=' + encodeURIComponent(query.trim()), undefined, ctrl.signal);
-      if (!ctrl.signal.aborted) { setCities(result.cities); if (!result.cities.length) setCityError('未找到地区，请补充城市或区县名。'); }
+      if (!ctrl.signal.aborted) { setCities(result.cities); if (!result.cities.length) setCityError('未找到地区'); }
     } catch (e) { if (!ctrl.signal.aborted) setCityError(e instanceof Error ? e.message : '地区查询失败'); }
     finally { if (!ctrl.signal.aborted) setSearching(false); }
   };
   return createPortal(<div ref={panel} className="weather-popover" role="dialog" aria-label="位置与天气" tabIndex={-1} style={position}>
     <div className="weather-popover-head"><div><small>{location?.kind === 'manual' ? '已选择地区' : '当前位置'}</small><h2>{placeLabel(location)}</h2></div><button aria-label="关闭天气面板" onClick={onClose}><X size={17}/></button></div>
-    {(locationError || (location && !location.district)) && <p className="weather-small-note">{locationError || '尚未识别到区县，可重新定位或手动选择。'}</p>}
-    {data && <><div className="weather-popover-summary"><span>{Math.round(data.temperature)}° · {data.label}</span><span>空气 {data.airQuality.aqi === null ? '暂不可用' : `${data.airQuality.label} · ${Math.round(data.airQuality.aqi)}`}</span></div><ul className="weather-mini-tips">{data.tips.slice(0, 3).map(tip => <li key={tip}>{tip}</li>)}</ul></>}
+    {locationError && <details className="weather-small-note"><summary>定位详情</summary><p>{locationError}</p></details>}
+    {data && <><div className="weather-popover-summary"><span>{Math.round(data.temperature)}° · {data.label}</span><span>空气 {data.airQuality.aqi === null ? '暂不可用' : `${data.airQuality.label} · ${Math.round(data.airQuality.aqi)}`}</span></div></>}
     {(busy || error) && <p className={`weather-small-note ${error ? 'weather-small-error' : ''}`} role="status">{busy ? '正在更新位置与天气…' : error}</p>}
-    <div className="weather-location-actions"><button disabled={busy} onClick={locateWeather}><MapPin size={14}/>{location ? '重新定位' : '定位到我所在的区'}</button>{location && <button disabled={busy} aria-label="刷新天气" onClick={() => void loadLocalWeather(location, true)}><RefreshCw size={14}/></button>}</div>
-    <form className="weather-place-search" onSubmit={event => { event.preventDefault(); void find(); }}><input aria-label="搜索城市或区县" value={query} onChange={event => setQuery(event.target.value)} placeholder="输入城市或区县，如浦东新区" maxLength={80}/><button aria-label="搜索地区" disabled={searching || query.trim().length < 2}>{searching ? <LoaderCircle className="spin" size={16}/> : <Search size={16}/>}</button></form>
+    <div className="weather-location-actions"><button disabled={busy} onClick={locateWeather}><MapPin size={14}/>{location ? '重新定位' : '定位'}</button>{location && <button disabled={busy} aria-label="刷新天气" onClick={() => void loadLocalWeather(location, true)}><RefreshCw size={14}/></button>}</div>
+    <form className="weather-place-search" onSubmit={event => { event.preventDefault(); void find(); }}><input aria-label="搜索城市或区县" value={query} onChange={event => setQuery(event.target.value)} placeholder="城市或区县" maxLength={80}/><button aria-label="搜索地区" disabled={searching || query.trim().length < 2}>{searching ? <LoaderCircle className="spin" size={16}/> : <Search size={16}/>}</button></form>
     {cityError && <p className="weather-small-note weather-small-error" role="status">{cityError}</p>}
     <div className="weather-place-results">{cities.map(city => <button key={`${city.latitude},${city.longitude}`} disabled={busy} onClick={() => { void loadLocalWeather({ ...city, kind: 'manual' }); setCities([]); setQuery(''); }}><b>{placeLabel(city)}</b><small>{city.region}</small></button>)}</div>
-    <p className="weather-small-source">{data ? `${data.source} · 空气质量为 US AQI` : '选择地区后获取当地天气'} · 位置仅用于本次查询，不保存精确坐标。 <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">© OpenStreetMap</a></p>
+    <p className="weather-small-source">{data && <span>{data.source} · US AQI · </span>}<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">© OpenStreetMap</a></p>
   </div>, document.body);
 }
 
@@ -60,9 +60,9 @@ export function WeatherWidget() {
   const trigger = useRef<HTMLButtonElement>(null);
   const close = useCallback(() => setOpen(false), []);
   const entries = useMemo(() => {
-    if (!data) return [{ Icon: Cloud, text: error ? '天气暂不可用 · 点击查看' : '正在获取当地天气' }];
+    if (!data) return [{ Icon: Cloud, text: error ? '天气不可用' : '天气' }];
     return [{ Icon: ICONS[data.type] || Cloud, text: `${Math.round(data.temperature)}° · ${data.label}` },
-      { Icon: Umbrella, text: data.rainProbability !== null ? `未来 6 小时降雨 ${data.rainProbability}%` : data.nextRainAmount != null ? `未来 6 小时降水 ${data.nextRainAmount} mm` : '降雨预报暂不可用' },
+      { Icon: Umbrella, text: data.rainProbability !== null ? `6h 降雨 ${data.rainProbability}%` : data.nextRainAmount != null ? `6h 降水 ${data.nextRainAmount} mm` : '降雨预报暂不可用' },
       { Icon: Wind, text: data.airQuality.aqi === null ? '空气质量暂不可用' : `空气 ${data.airQuality.label} · ${Math.round(data.airQuality.aqi)}` }];
   }, [data, error]);
   useEffect(() => {
@@ -76,7 +76,7 @@ export function WeatherWidget() {
   return <div className="weather-status-area">
     <button ref={trigger} className={`weather-status-strip ${open ? 'expanded' : ''}`} aria-label={`天气与位置：${placeLabel(location)}`} aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(value => !value)} onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)} onFocus={() => setHovered(true)} onBlur={() => setHovered(false)}>
       <span className="weather-status-location"><MapPin size={13}/><span>{placeLabel(location)}</span></span><span className="weather-status-divider"/>
-      <span className="weather-status-fact" key={busy ? 'busy' : entry.text}>{busy ? <LoaderCircle className="spin" size={14}/> : <entry.Icon size={14}/>}<span>{busy ? '正在更新…' : entry.text}</span></span>
+      <span className="weather-status-fact" key={busy ? 'busy' : entry.text}>{busy ? <LoaderCircle className="spin" size={14}/> : <entry.Icon size={14}/>}<span>{busy ? '更新中' : entry.text}</span></span>
       <span className="weather-status-dots" aria-hidden="true">{entries.map((_, index) => <i key={index} className={index === slide % entries.length ? 'active' : ''}/>)}</span><ChevronDown className="weather-status-chevron" size={13}/>
     </button>
     {open && <WeatherPopover anchor={trigger} onClose={close}/>}

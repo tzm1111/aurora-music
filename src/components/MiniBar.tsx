@@ -29,7 +29,7 @@ export function MiniBar() {
         <div className="mini-seek"><span>{fmt(progress)}</span><input type="range" aria-label="播放进度" aria-valuetext={`${fmt(progress)}，总长 ${fmt(duration)}`} min="0" max={duration || 1} step="1" value={Math.min(progress, duration || 1)} disabled={!duration} onChange={e => state.seek(Number(e.target.value))}/><span>{fmt(duration)}</span></div>
       </div>
       <div className="mini-extras"><button className="mini-like" aria-label={`${favorites.includes(current.id) ? '取消喜欢' : '喜欢'} ${current.title}`} title={favorites.includes(current.id) ? '取消喜欢' : '喜欢'} aria-pressed={favorites.includes(current.id)} onClick={() => state.toggleFavorite(current.id)}><Heart size={18} fill={favorites.includes(current.id) ? 'currentColor' : 'none'}/></button><div className="mini-volume"><Volume2 size={16}/><input type="range" aria-label="音量" min="0" max="1" step="0.01" value={volume} onChange={e => state.setVolume(Number(e.target.value))}/></div><button className="mini-queue" aria-label="播放队列" title="播放队列" onClick={() => state.setQueueOpen(true)}><ListMusic size={20}/></button></div>
-    </> : <button className="mini-empty" onClick={() => state.setView('home')}><Music2 size={18}/>让 DJ 为你选一首歌</button>}
+    </> : <button className="mini-empty" onClick={() => state.setView('home')}><Music2 size={18}/>AI DJ</button>}
     <div className="mini-progress" aria-hidden="true"><div className="fill" style={{ width: `${pct}%` }}/></div>
   </motion.footer>;
 }

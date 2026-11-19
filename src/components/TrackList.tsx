@@ -17,7 +17,7 @@ export function TrackList({ tracks, queue, playlistId }: { tracks: Track[]; queu
     state().addToPlaylist(target, trackId); setAdding(null); setNotice('已加入歌单');
   };
   return <>
-    {notice && <div className="list-notice" role="status">{notice}<button onClick={() => setNotice('')}>关闭</button></div>}
+    <span className="sr-only" role="status">{notice}</span>
     <div className="track-list">
       {tracks.map(t => <div key={t.id} className={`track-row ${current?.id === t.id ? 'current' : ''}`}>
         <button className="track-main" aria-label={`播放 ${t.title}`} onClick={() => state().playTrack(t.id, queue ?? tracks.map(x => x.id))}>

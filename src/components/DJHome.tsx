@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties, PointerEvent } from 'react';
-import { ArrowUpRight, LoaderCircle, Settings2, Mic, Square, ListMusic, ChevronRight, ChevronDown, Play, Pause, Sparkles } from 'lucide-react';
+import { ArrowUpRight, LoaderCircle, Settings2, Mic, Square, ListMusic, ChevronRight, ChevronDown, Play, Pause, Sparkles, CircleAlert, Keyboard } from 'lucide-react';
 import { usePlayer, resolveTrack } from '../store/usePlayer';
 import { startDJ } from '../lib/djController';
 import { apiRequest } from '../services/api';
@@ -34,7 +34,6 @@ export function DJHome() {
   const mode = usePlayer(s => s.djMode);
   const queue = usePlayer(s => s.queue);
   const index = usePlayer(s => s.currentIndex);
-  const notice = usePlayer(s => s.djRefillNotice);
   const importedTracks = usePlayer(s => s.importedTracks);
   const remoteTracks = usePlayer(s => s.remoteTracks);
   const histories = usePlayer(s => s.djPlaylists);
@@ -42,7 +41,7 @@ export function DJHome() {
   const upcoming = queue.slice(Math.max(0, index + 1), Math.max(0, index + 1) + 3);
   const animate = useVisualMotion(true);
   const orbitMotion = useVisualMotion(true);
-  const status = voicePhase === 'starting' ? '正在开启麦克风' : listening ? '正在听你说' : busy ? '正在挑选下一段音乐' : active ? playing ? '陪你听，继续为你选歌' : '音乐已暂停，随时继续' : '此刻，想听什么？';
+  const status = voicePhase === 'starting' ? '开启麦克风…' : listening ? '正在听' : busy ? '选歌中…' : active ? plan?.label || '专属频道' : '想听什么？';
   const direction = moodDescription(mood.x, mood.y);
   useEffect(() => () => voice.current?.abort(), []);
   const record = () => {
@@ -69,10 +68,9 @@ export function DJHome() {
     setMood({ x: Math.round(Math.max(0, Math.min(100, (event.clientX - rect.left) / rect.width * 100))), y: Math.round(Math.max(0, Math.min(100, 100 - (event.clientY - rect.top) / rect.height * 100))) });
   };
   return <section className={`dj-studio ${active ? 'has-session' : ''} ${animate ? 'motion-on' : ''} ${orbitMotion ? 'orbits-on' : ''} ${listening ? 'is-listening' : busy ? 'is-thinking' : 'is-ready'}`}>
-    <header className="studio-toolbar"><span className="studio-brand"><span/>AURORA <small> / 专属 DJ</small></span><button className="studio-history" onClick={() => usePlayer.getState().setView('djplaylists')}><ListMusic size={16}/>DJ 歌单{histories.length > 0 && <span>{histories.length}</span>}<ChevronRight size={14}/></button></header>
+    <header className="studio-toolbar"><span className="studio-brand">AI DJ</span><div className="studio-tools"><button className="studio-history" onClick={() => usePlayer.getState().setView('djplaylists')} aria-label={`DJ 歌单，${histories.length} 张`} title="DJ 歌单"><ListMusic size={17}/>歌单</button><button className="studio-settings" onClick={() => setSettings(true)} aria-label="AI 设置" title={modelAvailable && mode !== 'rules' ? 'AI 已连接' : 'AI 设置'}><Settings2 size={17}/><i className={modelAvailable ? 'connected' : ''}/></button></div></header>
     <div className="studio-layout">
       <section className="studio-presence" aria-label="与 DJ 对话">
-        <div className="presence-caption"><span className="presence-dot"/>{status}</div>
         <div className="presence-scene">
           <div className="presence-aura" aria-hidden="true"/>
           <div className="presence-orbit solar-system" aria-hidden="true">{[1, 2, 3].map(i => <div key={i} className={`solar-lane solar-lane-${i}`}><div className="solar-revolution"><span className="solar-planet"/></div></div>)}</div>
@@ -80,39 +78,35 @@ export function DJHome() {
             <DJOrb animate={animate} phase={busy ? 'thinking' : voicePhase}/>
             <span className="presence-voice">{listening ? <span className="voice-bars" aria-hidden="true">{[0, 1, 2, 3, 4].map(i => <i key={i}/>)}</span> : busy || voicePhase === 'starting' ? <LoaderCircle size={30} className="spin"/> : null}</span>
           </button>
-          <span className="presence-coordinate coordinate-left" aria-hidden="true">YOUR MOOD</span><span className="presence-coordinate coordinate-right" aria-hidden="true">YOUR SOUND</span>
         </div>
-        <h1>{listening ? '我在听。' : busy ? '让音乐接住此刻。' : active ? plan?.label || '这一段，为你而选。' : <>你的心情，<br/>我来配乐。</>}</h1>
-        <p className="presence-description">{listening ? '说说心情，或告诉我想怎么调整。' : active ? plan?.intro : '不必想歌名，把这一刻交给我。'}</p>
-        <button className="presence-talk" disabled={busy} onClick={record}>{voiceActive ? <Square size={14}/> : <Mic size={16}/>} {voicePhase === 'starting' ? '正在开启 · 点击取消' : listening ? '说完了' : '点光球，和我说说'}<span>{listening ? '结束后确认文字' : '也可以在下方打字'}</span></button>
+        <h1 aria-live="polite">{status}</h1>
         <form className="studio-composer" onSubmit={e => { e.preventDefault(); if (!busy && !voiceActive && text.trim()) void submit(text.trim()); }}>
-          <input ref={composer} aria-label="告诉 DJ 当前心情" value={text} onChange={e => setText(e.target.value)} readOnly={voiceActive} maxLength={300} placeholder={voiceActive ? '你的话会显示在这里…' : active ? '比如：更安静一点，不要现场版…' : '比如：刚下班，想让脑袋放空…'}/>
+          <input ref={composer} aria-label="告诉 DJ 当前心情" value={text} onChange={e => setText(e.target.value)} readOnly={voiceActive} maxLength={300} placeholder={voiceActive ? '…' : active ? '换个氛围…' : '说说此刻的心情…'}/>
+          <button type="button" className={`composer-mic ${voiceActive ? 'active' : ''}`} disabled={busy} onClick={record} aria-label={voicePhase === 'starting' ? '取消开启麦克风' : listening ? '结束语音输入' : '语音输入'} aria-pressed={voiceActive} title="语音输入">{voicePhase === 'starting' ? <LoaderCircle size={18} className="spin"/> : listening ? <Square size={16}/> : <Mic size={19}/>}</button>
           <button type="submit" disabled={busy || voiceActive || !text.trim()} aria-label={active ? '提交音乐调整' : '提交心情'}><ArrowUpRight size={19}/></button>
         </form>
-        <div className="studio-feedback" aria-live="polite">{voiceError ? <><p role="alert">{voiceError}</p><button className="voice-keyboard" onClick={() => composer.current?.focus()}>使用键盘语音输入</button></> : voicePhase === 'starting' ? <p>请允许麦克风，开启后再说话。</p> : listening ? <p>正在转写，结束后点击箭头确认。</p> : busy ? <p>{active ? '当前音乐照常播放，新的推荐马上接上。' : '正在寻找符合这个氛围的歌曲…'}</p> : null}</div>
+        {voiceError && <div className="studio-feedback compact-feedback"><details><summary aria-label="查看语音错误详情"><CircleAlert size={16}/></summary><p>{voiceError}</p></details><button className="voice-keyboard" onClick={() => composer.current?.focus()}><Keyboard size={15}/>键盘语音</button></div>}
+        <div className="studio-scenes">{(active ? ['更安静', '更有活力', '换一批'] : SCENES).map(scene => <button key={scene} disabled={busy || voiceActive} onClick={() => submit(scene)}>{scene}</button>)}</div>
       </section>
       <aside className="studio-side">
         {active && current && <section className="studio-session" aria-label="DJ 推荐歌单">
-          <header><span><span className="session-dot"/>这一刻在听</span><button onClick={() => usePlayer.getState().setQueueOpen(true)} aria-label="查看完整推荐歌单">{queue.length} 首<ChevronRight size={15}/></button></header>
-          <div className="session-current"><button className="session-cover" aria-label={`展开播放器：${current.title}`} onClick={() => usePlayer.getState().setNowPlayingOpen(true)}><img src={current.cover} alt=""/></button><div><h2>{current.title}</h2><p>{current.artist}</p><small>{playbackStatus === 'loading' || playbackStatus === 'buffering' ? '正在加载…' : playbackStatus === 'error' ? '暂时无法播放，可换一首' : playing ? '正在播放' : '已暂停'}{current.preview ? ' · 试听' : ''}</small></div><button className="session-play" onClick={() => usePlayer.getState().togglePlay()} aria-label={playing ? '暂停 DJ 播放' : '继续 DJ 播放'}>{playing ? <Pause size={17} fill="currentColor"/> : <Play size={17} fill="currentColor"/>}</button></div>
-          <div className="session-next-label">接下来，我为你选了</div><ol>{upcoming.map(id => { const track = resolveTrack({ importedTracks, remoteTracks }, id); return track ? <li key={id}><button onClick={() => usePlayer.getState().playTrack(id)} aria-label={`播放 ${track.title}`}><img src={track.cover} alt=""/><span><b>{track.title}</b><small>{track.artist}{track.preview ? ' · 试听' : ''}</small></span><Play size={13}/></button></li> : null; })}</ol>
-          <p className="session-note" role="status">{notice || '下一段音乐，我会自动接上。'}</p>
+          <header><span><ListMusic size={15}/>推荐歌单</span><button onClick={() => usePlayer.getState().setQueueOpen(true)} aria-label="查看完整推荐歌单">{queue.length} 首<ChevronRight size={15}/></button></header>
+          <div className="session-current"><button className="session-cover" aria-label={`展开播放器：${current.title}`} onClick={() => usePlayer.getState().setNowPlayingOpen(true)}><img src={current.cover} alt=""/></button><div><h2>{current.title}</h2><p>{current.artist}</p>{current.preview && <small>试听</small>}</div><button className="session-play" onClick={() => usePlayer.getState().togglePlay()} aria-label={playing ? '暂停 DJ 播放' : '继续 DJ 播放'}>{playbackStatus === 'loading' || playbackStatus === 'buffering' ? <LoaderCircle size={17} className="spin"/> : playing ? <Pause size={17} fill="currentColor"/> : <Play size={17} fill="currentColor"/>}</button></div>
+          <ol>{upcoming.map(id => { const track = resolveTrack({ importedTracks, remoteTracks }, id); return track ? <li key={id}><button onClick={() => usePlayer.getState().playTrack(id)} aria-label={`播放 ${track.title}`}><img src={track.cover} alt=""/><span><b>{track.title}</b><small>{track.artist}{track.preview ? ' · 试听' : ''}</small></span><Play size={13}/></button></li> : null; })}</ol>
         </section>}
-        <section className="studio-mood" aria-label="心情坐标">
-          {active ? <button className="mood-toggle" aria-expanded={moodOpen} aria-controls="dj-mood-controls" onClick={() => setMoodOpen(v => !v)}><span><Sparkles size={15}/>把氛围调到刚刚好</span><ChevronDown size={15}/></button> : <header><span><Sparkles size={15}/>不想说话？让心情带路</span><small>拖动光点</small></header>}
-          <div id="dj-mood-controls" hidden={active && !moodOpen}>
+        <section className={`studio-mood ${moodOpen ? 'is-open' : ''}`} aria-label="心情坐标">
+          <button className="mood-toggle" aria-expanded={moodOpen} aria-controls="dj-mood-controls" onClick={() => setMoodOpen(v => !v)}><span><Sparkles size={15}/>氛围</span><ChevronDown size={15}/></button>
+          <div id="dj-mood-controls" hidden={!moodOpen}>
           <div className="mood-map" role="group" aria-label="拖动选择音乐氛围，或使用下方滑块" onPointerDown={e => { if (!busy && !voiceActive) { e.currentTarget.setPointerCapture(e.pointerId); moveMood(e); } }} onPointerMove={e => { if (e.currentTarget.hasPointerCapture(e.pointerId)) moveMood(e); }} style={{ '--mood-x': `${mood.x}%`, '--mood-y': `${100 - mood.y}%` } as CSSProperties}>
             <div className="mood-grid"/><span className="mood-axis axis-top">明亮</span><span className="mood-axis axis-bottom">沉静</span><span className="mood-axis axis-left">轻柔</span><span className="mood-axis axis-right">动感</span><span className="mood-glow"/><span className="mood-point"/>
           </div>
           <div className="mood-accessible"><label>音乐动感<input type="range" min="0" max="100" value={mood.x} disabled={busy || voiceActive} onChange={e => setMood(v => ({ ...v, x: Number(e.target.value) }))}/></label><label>心情明亮<input type="range" min="0" max="100" value={mood.y} disabled={busy || voiceActive} onChange={e => setMood(v => ({ ...v, y: Number(e.target.value) }))}/></label></div>
-          <div className="mood-selection"><span>{mood.y > 55 ? '明亮' : mood.y < 45 ? '沉静' : '平和'} · {mood.x > 60 ? '动感' : mood.x < 40 ? '轻柔' : '适中'}</span><button disabled={busy || voiceActive} onClick={() => submit(direction)}>{active ? '按这个氛围调整' : '就从这里开始'}<ArrowUpRight size={15}/></button></div>
+          <div className="mood-selection"><span>{mood.y > 55 ? '明亮' : mood.y < 45 ? '沉静' : '平和'} · {mood.x > 60 ? '动感' : mood.x < 40 ? '轻柔' : '适中'}</span><button disabled={busy || voiceActive} onClick={() => submit(direction)}>{active ? '调整' : '开始'}<ArrowUpRight size={15}/></button></div>
           </div>
         </section>
-        <div className="studio-scenes">{(active ? ['更安静一点', '更有活力', '换一批'] : SCENES).map(scene => <button key={scene} disabled={busy || voiceActive} onClick={() => submit(scene)}>{scene}<ArrowUpRight size={12}/></button>)}</div>
       </aside>
     </div>
-    {error && <div className="studio-error" role="alert">{error}<button disabled={busy} onClick={() => submit(text.trim() || plan?.description || direction)}>再试一次</button></div>}
-    <footer className="studio-footer"><span>{active ? '专属频道 · 自动续播' : '随心开场 · 连续播放'}</span><button onClick={() => setSettings(true)}><Settings2 size={13}/>{modelAvailable ? active && mode === 'rules' ? '场景推荐 · AI 暂时不可用' : 'AI 已连接' : '场景推荐 · 连接 AI'}<ChevronRight size={12}/></button></footer>
+    {error && <div className="studio-error compact-feedback"><details><summary aria-label="查看推荐错误详情"><CircleAlert size={16}/></summary><p>{error}</p></details><button disabled={busy} onClick={() => submit(text.trim() || plan?.description || direction)}>重试</button></div>}
     {settings && <ModelDialog onClose={() => setSettings(false)}/>}
   </section>;
 }

@@ -19,7 +19,7 @@ export function CollectionView() {
   const tracks: Track[] = view === 'library' ? [...TRACKS, ...imported] :
     (view === 'favorites' ? favorites : active?.trackIds ?? []).map(id => resolveTrack({ importedTracks: imported, remoteTracks: remote }, id)).filter((t): t is Track => Boolean(t));
   return <section className="main collection-view glass-soft">
-    <div className="collection-heading"><div><p className="eyebrow">属于你的音乐</p><h1>{title}</h1><p className="subtle">{tracks.length} 首 · 收藏与歌单保存在当前浏览器</p></div>{view === 'favorites' ? <Heart size={32}/> : <Library size={32}/>}</div>
+    <div className="collection-heading"><div><h1>{title}</h1><p className="subtle">{tracks.length} 首</p></div>{view === 'favorites' ? <Heart size={32}/> : <Library size={32}/>}</div>
     {view === 'playlists' && <>
       <form className="playlist-create" onSubmit={e => { e.preventDefault(); if (name.trim()) { state.createPlaylist(name); setName(''); } }}>
         <input aria-label="新歌单名称" placeholder="给新歌单起个名字" value={name} onChange={e => setName(e.target.value)} maxLength={60}/><button type="submit" disabled={!name.trim()}><Plus size={16}/>创建歌单</button>
@@ -29,6 +29,6 @@ export function CollectionView() {
         <input name="playlistName" defaultValue={active.name} aria-label="修改歌单名称" maxLength={60}/><button>保存名称</button>
       </form>}
     </>}
-    {tracks.length ? <TrackList tracks={tracks} playlistId={view === 'playlists' ? active?.id : undefined}/> : <div className="welcome-card"><h2>{view === 'library' ? '把喜欢的音乐带进来' : view === 'favorites' ? '留住你喜欢的歌' : '为一个时刻，建一张歌单'}</h2><p>{view === 'library' ? '从导航导入本地音频，文件会保存在浏览器中。' : '搜索结果中的爱心与歌单按钮，可以把音乐保存在这里。'}</p><button className="primary-action" onClick={() => state.setView('search')}>去找音乐</button>{view === 'library' && <button onClick={() => state.setNavOpen(true)}>导入本地音乐</button>}</div>}
+    {tracks.length ? <TrackList tracks={tracks} playlistId={view === 'playlists' ? active?.id : undefined}/> : <div className="welcome-card"><h2>暂无歌曲</h2><button className="primary-action" onClick={() => state.setView('search')}>去找音乐</button>{view === 'library' && <button onClick={() => state.setNavOpen(true)}>导入本地音乐</button>}</div>}
   </section>;
 }

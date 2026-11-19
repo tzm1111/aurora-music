@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import './styles/responsive.css'
 import './styles/dj-studio.css'
+import './styles/minimal.css'
 import { MotionConfig } from 'framer-motion'
 import App from './App.tsx'
 
