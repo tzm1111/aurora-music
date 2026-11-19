@@ -3,6 +3,9 @@ import type { DJResult } from '../services/api';
 import { usePlayer, resolveTrack } from '../store/usePlayer';
 import { dedupeSongs } from '../../shared/djDiversity.js';
 import { connectAudioElement, resumeContext } from './audioVisualizer';
+import { contextPlaylist } from './contextPlaylist';
+import { buildContextMix } from '../../shared/contextMix.js';
+import type { ContextSnapshot } from '../../shared/contextMix.js';
 let generation = 0;
 let request: AbortController | null = null;
 function recentTracks(state: ReturnType<typeof usePlayer.getState>) {
@@ -14,15 +17,21 @@ function unlockAudio() {
   const el = document.querySelector('audio');
   if (el) { try { connectAudioElement(el); resumeContext(); } catch { /* 无频谱也可听音乐 */ } }
 }
-export async function startDJ(description: string, adjustment = false) {
+export function startContextDJ() {
+  const mix = contextPlaylist();
+  return startDJ(mix.description, false, mix.context);
+}
+export async function startDJ(description: string, adjustment = false, context?: ContextSnapshot) {
   if (!description.trim()) return false;
   unlockAudio();
   const ticket = ++generation;
   request?.abort(); request = new AbortController();
   const previous = usePlayer.getState();
+  const mix = buildContextMix(context || (adjustment && description.trim() === '换一批' && previous.djPlan?.context ? contextPlaylist().context : null));
+  const intent = mix ? mix.description : description;
   usePlayer.setState({ djBusy: true, djError: null, djRefillNotice: null });
   try {
-    const result = await apiRequest<DJResult>('/api/dj/session', { description, previous: adjustment ? previous.djPlan : null,
+    const result = await apiRequest<DJResult>('/api/dj/session', { description: intent, context: mix?.context, previous: adjustment && !mix ? previous.djPlan : null,
       excludeIds: previous.djSeen, recentTracks: recentTracks(previous), offset: adjustment && /换一批|换种|换一种/.test(description) ? previous.djOffset + 12 : 0 }, request.signal);
     if (ticket !== generation) return false;
     const state = usePlayer.getState();
@@ -34,9 +43,10 @@ export async function startDJ(description: string, adjustment = false) {
       const currentId = state.queue[state.currentIndex];
       usePlayer.setState({ queue: [currentId, ...ids.filter(id => id !== currentId)], currentIndex: 0 });
     } else state.playTrack(ids[0], ids);
-    usePlayer.setState({ djActive: true, djPlan: result.plan, djMode: result.mode, repeat: 'off', shuffle: false,
+    const plan = mix ? { ...result.plan, label: mix.name, description: mix.description, context: mix.context } : result.plan;
+    usePlayer.setState({ djActive: true, djPlan: plan, djMode: result.mode, repeat: 'off', shuffle: false,
       djSeen: [...new Set([...previous.djSeen, ...ids])].slice(-80), djOffset: adjustment ? previous.djOffset + 12 : 0 });
-    usePlayer.getState().saveDJPlaylist(result.plan, result.mode, ids);
+    usePlayer.getState().saveDJPlaylist(plan, result.mode, ids);
     return true;
   } catch (error) {
     if (ticket !== generation || request?.signal.aborted) return false;
@@ -48,12 +58,13 @@ export async function refillDJ() {
   const state = usePlayer.getState();
   if (!state.djActive || !state.djPlan || state.djBusy) return;
   const ticket = generation;
-  const description = state.djPlan.description;
+  const mix = state.djPlan.context ? contextPlaylist() : null;
+  const description = mix?.description || state.djPlan.description;
   const plan = state.djPlan;
   usePlayer.setState({ djBusy: true });
   try {
     const recent = recentTracks(state);
-    const result = await apiRequest<DJResult>('/api/dj/session', { description, previous: plan, excludeIds: state.djSeen, recentTracks: recent, offset: state.djOffset + 12 });
+    const result = await apiRequest<DJResult>('/api/dj/session', { description, context: mix?.context, previous: mix ? null : plan, excludeIds: state.djSeen, recentTracks: recent, offset: state.djOffset + 12 });
     const latest = usePlayer.getState();
     if (ticket !== generation || !latest.djActive || latest.djPlan !== plan) return;
     const tracks = dedupeSongs(result.tracks, recentTracks(latest));
@@ -61,7 +72,7 @@ export async function refillDJ() {
     const ids = tracks.map(t => t.id).filter(id => !latest.queue.includes(id));
     const wasAtEnd = latest.djWaitingAtEnd;
     const trim = Math.max(0, latest.currentIndex - 10);
-    usePlayer.setState({ queue: [...latest.queue.slice(trim), ...ids], currentIndex: latest.currentIndex - trim, djOffset: latest.djOffset + 12,
+    usePlayer.setState({ ...(mix && ids.length ? { djPlan: { ...result.plan, label: mix.name, description: mix.description, context: mix.context }, djMode: result.mode } : {}), queue: [...latest.queue.slice(trim), ...ids], currentIndex: latest.currentIndex - trim, djOffset: latest.djOffset + 12,
       djSeen: [...new Set([...latest.djSeen, ...ids])].slice(-80), djRefillNotice: ids.length ? null : '暂时没找到新歌，可点击换一批。' });
     if (wasAtEnd && ids.length) usePlayer.getState().next();
   } catch {

@@ -24,6 +24,15 @@
 .studio-scenes,.has-session .studio-scenes { display:flex; justify-content:center; flex-wrap:wrap; gap:8px; margin:16px auto 0; }
 .studio-scenes button,.has-session .studio-scenes button { min-height:44px; border:0; background:transparent; padding:8px 13px; border-radius:99px; font-size:12px; text-align:center; justify-content:center; color:#829cb1; }
 .studio-scenes button:hover:not(:disabled) { color:#d5f1e7; background:#adcfdf0a; }
+.context-mix { display:flex; align-items:center; gap:12px; width:min(540px,100%); margin:18px auto 0; padding:12px 16px; border:1px solid #b6e8d51c; border-radius:18px; background:linear-gradient(110deg,#95dcd60b,#b5a9e505); text-align:left; color:#b7d5d6; min-height:64px; }
+.context-mix-icon { display:grid; place-items:center; flex:none; width:36px; height:36px; border-radius:12px; color:#adcec9; background:#a9ece009; }
+.context-mix-copy { display:flex; flex-direction:column; gap:4px; flex:1; min-width:0; }
+.context-mix-copy small { color:#819bab; font-size:10px; font-weight:400; }
+.context-mix-copy b { color:#cbdeda; font-size:14px; font-weight:500; overflow-wrap:anywhere; }
+.context-mix:hover:not(:disabled) { border-color:#b6e8d53b; background-color:#a9ece009; }
+.context-mix:focus-visible { outline:2px solid #a9ece0; outline-offset:4px; }
+.context-mix:disabled { opacity:.5; cursor:default; }
+@media (prefers-reduced-motion:no-preference) { .context-mix { transition:border-color .2s,background-color .2s,opacity .2s; } }
 .studio-side { width:100%; max-width:540px; gap:18px; }
 .studio-mood,.has-session .studio-mood { order:-1; width:100%; padding:0; border:0; background:transparent; border-radius:18px; }
 .mood-toggle { width:auto; margin:auto; gap:16px; color:#7f9aaf; padding:0 13px; border-radius:99px; }

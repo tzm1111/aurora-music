@@ -5,15 +5,17 @@ import { fileURLToPath } from 'node:url';
 const root=fileURLToPath(new URL('../',import.meta.url)).replace(/\/$/,'');
 const dir=root+'/node_modules/.tmp';
 await fs.mkdir(dir,{recursive:true});
-for(const [source,target] of [['src/data/tracks.ts','player-data.mjs'],['src/lib/localLibrary.ts','player-files.mjs'],['src/store/usePlayer.ts','player-store.mjs'],['src/services/api.ts','dj-api.mjs'],['src/lib/audioVisualizer.ts','dj-audio.mjs'],['src/lib/djController.ts','dj-controller.mjs']]){
+for(const [source,target] of [['src/data/tracks.ts','player-data.mjs'],['src/lib/localLibrary.ts','player-files.mjs'],['src/store/usePlayer.ts','player-store.mjs'],['src/services/api.ts','dj-api.mjs'],['src/lib/audioVisualizer.ts','dj-audio.mjs'],['src/store/useLocalWeather.ts','dj-weather.mjs'],['src/lib/contextPlaylist.ts','dj-context.mjs'],['src/lib/djController.ts','dj-controller.mjs']]){
  let code=ts.transpileModule(await fs.readFile(root+'/'+source,'utf8'),{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText;
- for(const [from,to] of [['../data/tracks','player-data.mjs'],['../lib/localLibrary','player-files.mjs'],['../store/usePlayer','player-store.mjs'],['../services/api','dj-api.mjs'],['./audioVisualizer','dj-audio.mjs']]) code=code.replaceAll("'"+from+"'","'./"+to+"'");
+ for(const [from,to] of [['../data/tracks','player-data.mjs'],['../lib/localLibrary','player-files.mjs'],['../store/usePlayer','player-store.mjs'],['./usePlayer','player-store.mjs'],['../services/api','dj-api.mjs'],['./audioVisualizer','dj-audio.mjs'],['../store/useLocalWeather','dj-weather.mjs'],['./contextPlaylist','dj-context.mjs']]) code=code.replaceAll("'"+from+"'","'./"+to+"'");
  await fs.writeFile(dir+'/'+target,code);
 }
 const saved=new Map();globalThis.localStorage={getItem:k=>saved.get(k)??null,setItem:(k,v)=>saved.set(k,v),removeItem:k=>saved.delete(k)};
 globalThis.document={querySelector:()=>null};
 const {usePlayer}=await import(dir+'/player-store.mjs');
-const {startDJ,refillDJ,stopDJ,watchDJQueue}=await import(dir+'/dj-controller.mjs');
+const {startDJ,startContextDJ,refillDJ,stopDJ,watchDJQueue}=await import(dir+'/dj-controller.mjs');
+const {useLocalWeather}=await import(dir+'/dj-weather.mjs');
+const {contextPlaylist}=await import(dir+'/dj-context.mjs');
 const get=()=>usePlayer.getState();
 const result=ids=>({success:true,mode:'rules',modelAvailable:false,plan:{description:'focus',label:'focus',intro:'test',queries:['piano'],excludeTerms:[],instrumental:true},tracks:ids.map(id=>({id,title:id,artist:'test',src:'/api/'+id,cover:'test',tags:[],duration:60,source:'netease'}))});
 const respond=ids=>globalThis.fetch=async()=>({ok:true,json:async()=>result(ids)});
@@ -52,4 +54,26 @@ get().setView('discover');usePlayer.setState({currentIndex:get().queue.length-1}
 await new Promise(resolve=>setTimeout(resolve,30));
 assert.equal(refillCalls,2);assert.ok(get().djRefillNotice);get().setProgress(1);
 assert.equal(refillCalls,2);unwatch();stopDJ();assert.equal(get().djActive,false);assert.equal(get().isPlaying,false);
+// 时间天气歌单：不发送定位信息，命名历史保留快照，续播使用新天气但不打断当前曲。
+const now = new Date(2026,10,19,14,0);
+const freshWeather = {type:'rainy',temperature:14,fetchedAt:now.getTime()};
+assert.equal(contextPlaylist(now,freshWeather).context.weather,'rainy');
+assert.equal(contextPlaylist(now,{...freshWeather,fetchedAt:now.getTime()-31*60_000}).context.weather,null);
+assert.equal(contextPlaylist(now,null).name,'周四午后 · 午后松弛');
+assert.equal(contextPlaylist(now,{...freshWeather,fetchedAt:now.getTime()+3600_000}).context.weather,null);
+assert.notEqual(contextPlaylist(new Date(2026,10,20,0,0),null).key,contextPlaylist(now,null).key);
+useLocalWeather.setState({ data: { type:'rainy',temperature:14,fetchedAt:Date.now() }, location:{name:'私密位置',latitude:12.1234,longitude:23.4567} });
+let body;
+globalThis.fetch=async(_path,init)=>{body=JSON.parse(init.body);return {ok:true,json:async()=>result(['context1','context2','context3'])};};
+assert.equal(await startContextDJ(),true);
+assert.equal(body.context.weather,'rainy');assert.ok(!JSON.stringify(body).includes('私密位置'));assert.ok(!JSON.stringify(body).includes('latitude'));
+assert.equal(get().djPlan.label,contextPlaylist().name);assert.equal(get().djPlaylists[0].name,get().djPlan.label);
+const historic=get().djPlaylists[0].name;
+get().setProgress(17);get().togglePlay();
+useLocalWeather.setState({data:{type:'sunny',temperature:20,fetchedAt:Date.now()}});
+globalThis.fetch=async(_path,init)=>{body=JSON.parse(init.body);return {ok:true,json:async()=>result(['context4','context5'])};};
+await refillDJ();assert.equal(body.context.weather,'sunny');assert.equal(get().queue[get().currentIndex],'context1');assert.equal(get().progress,17);assert.equal(get().isPlaying,false);assert.equal(get().djPlaylists[0].name,historic);
+respond(['adjust1','adjust2']);await startDJ('专注工作',true);assert.equal(get().djPlan.context,undefined);
+stopDJ();
 console.log('通过：请求失败返回状态、切换历史/频谱后仍补队列、失败不循环请求、自动开始、调整不中断当前曲目、提前续队列、手动暂停不被恢复、自然结束后续播、过时请求不覆盖新请求、停止DJ。');
+console.log('通过：天气歌单一键播放、请求无定位信息、历史命名快照、天气变化在补歌时生效、暂停与当前曲保持、明确新意图覆盖天气推荐。');

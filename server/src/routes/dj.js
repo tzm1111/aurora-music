@@ -23,13 +23,13 @@ router.post('/model', async (req, res) => {
 
 router.get('/status', (req, res) => res.json({ success: true, ...djModelStatus(getMusicSession(req)?.model) }));
 router.post('/session', async (req, res) => {
-  const { description, previous, excludeIds, recentTracks, offset } = req.body || {};
+  const { description, previous, excludeIds, recentTracks, offset, context } = req.body || {};
   if (typeof description !== 'string' || !description.trim() || description.length > 300) return res.status(400).json({ success: false, error: { message: '请用 1 到 300 字描述心情或场景。' } });
   const previousPlan = previous && typeof previous.description === 'string' ? { description: previous.description.slice(0, 300) } : null;
   const ids = Array.isArray(excludeIds) ? excludeIds.filter(id => typeof id === 'string').slice(-80) : [];
   const recent = Array.isArray(recentTracks) ? recentTracks.filter(track => track && typeof track.title === 'string').slice(0, 100).map(track => ({ title: track.title.slice(0, 200), artist: typeof track.artist === 'string' ? track.artist.slice(0, 200) : '' })) : [];
   try {
-    const result = await createDJSet({ description: description.trim(), previous: previousPlan, excludeIds: ids, recentTracks: recent,
+    const result = await createDJSet({ description: description.trim(), context, previous: previousPlan, excludeIds: ids, recentTracks: recent,
       cookie: musicCookie(req), modelSettings: getMusicSession(req)?.model, offset: Math.min(240, Math.max(0, Number.parseInt(offset, 10) || 0)) });
     if (!res.destroyed) res.json(result);
   } catch (error) {

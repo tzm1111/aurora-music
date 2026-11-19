@@ -1,6 +1,7 @@
 import { callDJPlan, djModelStatus } from './llmService.js';
 import * as netease from './neteaseService.js';
 import { songKey, selectDiverseTracks } from '../../../shared/djDiversity.js';
+import { buildContextMix } from '../../../shared/contextMix.js';
 const ARTIST_POOLS = [
   ['坂本龙一', 'Yiruma', '久石让', 'Ludovico Einaudi', 'Ólafur Arnalds', 'Max Richter', 'Nils Frahm', 'Dustin O Halloran', 'Hania Rani', 'Joep Beving'],
   ['Brian Eno', 'Marconi Union', 'Hammock', 'Stars of the Lid', 'Eluvium', 'Helios', 'Goldmund', 'Ryuichi Sakamoto', 'Sigur Rós', 'Ólafur Arnalds'],
@@ -41,14 +42,21 @@ export function filterDJCandidates(tracks, plan, excludedIds = []) {
   }
   return [...unique.values()];
 }
-export async function createDJSet({ description, previous, excludeIds = [], recentTracks = [], cookie = '', offset = 0, modelSettings }) {
-  const fallback = rulesDJPlan(description, previous);
-  const model = await callDJPlan(description, previous, modelSettings);
+export function contextDJPlan(context) {
+  const mix = buildContextMix(context);
+  return mix ? { label: mix.name, intro: '', queries: mix.queries, excludeTerms: [], instrumental: mix.instrumental, artistFocus: null, context: mix.context, description: mix.description } : null;
+}
+export async function createDJSet({ description, context, previous, excludeIds = [], recentTracks = [], cookie = '', offset = 0, modelSettings }) {
+  const mix = buildContextMix(context);
+  const fallback = contextDJPlan(context) || rulesDJPlan(description, previous);
+  const intent = mix?.description || description;
+  const model = await callDJPlan(intent, mix ? null : previous, modelSettings);
   const plan = model || fallback;
   // 用户明确的否定约束不能被模型忽略。
   plan.excludeTerms = [...new Set([...plan.excludeTerms, ...fallback.excludeTerms].filter(term => typeof term === 'string' && term.trim()).map(term => term.trim()))];
   const sceneIndex = Math.max(0, SCENES.findIndex(scene => scene.label === fallback.label));
-  const pool = plan.instrumental && !SCENES[sceneIndex].instrumental ? ARTIST_POOLS[0] : ARTIST_POOLS[sceneIndex];
+  const pool = mix ? ARTIST_POOLS[({ ambient: 1, piano: 0, bright: 4, chill: 6, warm: 5 })[mix.profile]] : plan.instrumental && !SCENES[sceneIndex].instrumental ? ARTIST_POOLS[0] : ARTIST_POOLS[sceneIndex];
+  if (mix?.instrumental) plan.instrumental = true;
   const discovery = fallback.artistFocus ? [] : pool;
   const queries = [...new Set(model ? [...plan.queries, ...discovery] : [...discovery, ...plan.queries])].filter(query => !plan.excludeTerms.some(term => query.toLowerCase().includes(term.toLowerCase()))).slice(0, 12);
   const attempts = await Promise.allSettled(queries.map(query => netease.search(query, 8, offset, cookie)));
@@ -69,5 +77,5 @@ export async function createDJSet({ description, previous, excludeIds = [], rece
   const selected = selectDiverseTracks(playable, { recentTracks, maxPerArtist: fallback.artistFocus ? 10 : 2 });
   if (!selected.length) throw new Error('暂时没找到不重复的新歌，换个心情或稍后再试。');
   return { success: true, mode: model ? 'ai' : 'rules', modelAvailable: djModelStatus(modelSettings).available,
-    plan: { ...plan, artistFocus: fallback.artistFocus, description: [previous?.description, description].filter(Boolean).join('；').slice(-300) }, tracks: selected, loggedIn: Boolean(cookie) };
+    plan: { ...plan, ...(mix ? { label: mix.name, context: mix.context } : {}), artistFocus: fallback.artistFocus, description: mix?.description || [previous?.description, description].filter(Boolean).join('；').slice(-300) }, tracks: selected, loggedIn: Boolean(cookie) };
 }

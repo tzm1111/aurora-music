@@ -1,6 +1,7 @@
 // 与 Aurora 后端 /api 交互的最小封装
 // 开发环境由 Vite 代理到 http://localhost:3001（见 vite.config.ts）
 import type { Track } from '../types';
+import type { ContextSnapshot } from '../../shared/contextMix.js';
 export const API_BASE = (import.meta.env?.VITE_API_BASE_URL || '').replace(/\/+$/, '');
 export const ONLINE_PLAYER_URL = 'https://www.modelscope.cn/studios/Tzm1111/aurora-music?mode=full';
 const SESSION_KEY = 'aurora-backend-session:' + API_BASE;
@@ -17,8 +18,8 @@ async function apiFetch(path: string, init: RequestInit = {}) {
     response = await fetch(apiUrl(path), { ...init, headers, signal, credentials: API_BASE ? 'omit' : 'same-origin' });
   } catch (error) {
     if (init.signal?.aborted) throw error; // 用户取消或搜索切换，不显示网络错误。
-    if (timeout.aborted) throw new Error('音乐服务响应超时，请稍后重试。');
-    throw new Error('无法连接音乐服务，请检查网络或使用魔搭在线入口。');
+    if (timeout.aborted) throw new Error('音乐服务响应超时，请稍后重试。', { cause: error });
+    throw new Error('无法连接音乐服务，请检查网络或使用魔搭在线入口。', { cause: error });
   }
   const token = API_BASE ? response.headers.get('X-Aurora-Session') : null;
   if (API_BASE && token) { try { sessionStorage.setItem(SESSION_KEY, token); } catch { /* 不持久化登录状态 */ } }
@@ -94,7 +95,7 @@ export async function searchTracks(
   return { tracks: data.tracks ?? [], total: data.total ?? 0 };
 }
 
-export type DJPlan = { description: string; label: string; intro: string; queries: string[]; excludeTerms: string[]; instrumental: boolean; artistFocus?: string | null };
+export type DJPlan = { description: string; label: string; intro: string; queries: string[]; excludeTerms: string[]; instrumental: boolean; artistFocus?: string | null; context?: ContextSnapshot };
 export type DJResult = { success: boolean; mode: 'ai' | 'rules'; modelAvailable: boolean; plan: DJPlan; tracks: Track[]; loggedIn: boolean };
 export type AccountStatus = { loggedIn: boolean; profile: { nickname: string; avatarUrl: string; vipType: number } | null };
 export async function apiRequest<T>(path: string, body?: unknown, signal?: AbortSignal): Promise<T> {

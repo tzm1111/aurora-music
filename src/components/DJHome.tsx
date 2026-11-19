@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties, PointerEvent } from 'react';
-import { ArrowUpRight, LoaderCircle, Settings2, Mic, Square, ListMusic, ChevronRight, ChevronDown, Play, Pause, Sparkles, CircleAlert, Keyboard, AudioLines } from 'lucide-react';
+import { ArrowUpRight, LoaderCircle, Settings2, Mic, Square, ListMusic, ChevronRight, ChevronDown, Play, Pause, Sparkles, CircleAlert, Keyboard, AudioLines, Sun, Cloud, CloudRain, Snowflake, Moon, Clock3 } from 'lucide-react';
 import { usePlayer, resolveTrack } from '../store/usePlayer';
-import { startDJ } from '../lib/djController';
+import { startDJ, startContextDJ } from '../lib/djController';
+import { useContextPlaylist } from '../lib/useContextPlaylist';
 import { API_BASE, ONLINE_PLAYER_URL, apiRequest } from '../services/api';
 import { ModelDialog } from './ModelDialog';
 import { startVoiceInput } from '../lib/voiceInput';
@@ -23,6 +24,7 @@ export function DJHome() {
   const [mood, setMood] = useState({ x: 35, y: 60 });
   const [moodOpen, setMoodOpen] = useState(false);
   const voice = useRef<VoiceSession | null>(null);
+  const contextRequested = useRef(false);
   const composer = useRef<HTMLInputElement>(null);
   const active = usePlayer(s => s.djActive);
   const playing = usePlayer(s => s.isPlaying);
@@ -42,6 +44,14 @@ export function DJHome() {
   const orbitMotion = useVisualMotion(true);
   const status = voicePhase === 'starting' ? '开启麦克风…' : listening ? '正在听' : busy ? '选歌中…' : active ? plan?.label || '专属频道' : '想听什么？';
   const direction = moodDescription(mood.x, mood.y);
+  const contextMix = useContextPlaylist();
+  const ContextIcon = contextMix.context.weather ? ({ sunny: Sun, cloudy: Cloud, rainy: CloudRain, snowy: Snowflake, night: Moon })[contextMix.context.weather] : Clock3;
+  const playContext = async () => {
+    contextRequested.current = true;
+    voice.current?.abort(); setVoicePhase('idle'); setVoiceError('');
+    const draft = text;
+    if (await startContextDJ()) { setText(value => value === draft ? '' : value); setMoodOpen(false); }
+  };
   useEffect(() => () => voice.current?.abort(), []);
   const record = () => {
     if (voiceActive) { voice.current?.stop(); return; }
@@ -55,6 +65,7 @@ export function DJHome() {
     return () => window.removeEventListener('aurora-connections', update);
   }, []);
   const submit = async (description: string) => {
+    contextRequested.current = false;
     voice.current?.abort(); setVoicePhase('idle'); setVoiceError('');
     const draft = text;
     const success = await startDJ(description, active);
@@ -86,6 +97,11 @@ export function DJHome() {
           <button type="submit" disabled={busy || voiceActive || !text.trim()} aria-label={active ? '提交音乐调整' : '提交心情'}><ArrowUpRight size={19}/></button>
         </form>
         {voiceError && <div className="studio-feedback compact-feedback"><details><summary aria-label="查看语音错误详情"><CircleAlert size={16}/></summary><p>{voiceError}</p></details><button className="voice-keyboard" onClick={() => composer.current?.focus()}><Keyboard size={15}/>键盘语音</button></div>}
+        <button className="context-mix" disabled={busy || voiceActive} onClick={playContext} aria-label={`播放此刻歌单：${contextMix.name}`}>
+          <span className="context-mix-icon"><ContextIcon size={20} strokeWidth={1.5}/></span>
+          <span className="context-mix-copy"><small>此刻 · {contextMix.timeLabel}</small><b>{contextMix.title}</b></span>
+          {busy && plan?.context ? <LoaderCircle size={17} className="spin"/> : <Play size={16} fill="currentColor"/>}
+        </button>
         <div className="studio-scenes">{(active ? ['更安静', '更有活力', '换一批'] : SCENES).map(scene => <button key={scene} disabled={busy || voiceActive} onClick={() => submit(scene)}>{scene}</button>)}</div>
       </section>
       <aside className="studio-side">
@@ -106,7 +122,7 @@ export function DJHome() {
         </section>
       </aside>
     </div>
-    {error && <div className="studio-error compact-feedback"><details><summary aria-label="查看推荐错误详情"><CircleAlert size={16}/></summary><p>{error}</p></details><button disabled={busy} onClick={() => submit(text.trim() || plan?.description || direction)}>重试</button>{API_BASE && <a href={ONLINE_PLAYER_URL} target="_blank" rel="noopener noreferrer">打开魔搭完整版</a>}</div>}
+    {error && <div className="studio-error compact-feedback"><details><summary aria-label="查看推荐错误详情"><CircleAlert size={16}/></summary><p>{error}</p></details><button disabled={busy} onClick={() => contextRequested.current ? playContext() : submit(text.trim() || plan?.description || direction)}>重试</button>{API_BASE && <a href={ONLINE_PLAYER_URL} target="_blank" rel="noopener noreferrer">打开魔搭完整版</a>}</div>}
     {settings && <ModelDialog onClose={() => setSettings(false)}/>}
   </section>;
 }
