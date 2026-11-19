@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties, PointerEvent } from 'react';
-import { AudioLines, ArrowUpRight, LoaderCircle, Settings2, Mic, Square, ListMusic, ChevronRight, ChevronDown, Play, Pause, Sparkles } from 'lucide-react';
+import { ArrowUpRight, LoaderCircle, Settings2, Mic, Square, ListMusic, ChevronRight, ChevronDown, Play, Pause, Sparkles } from 'lucide-react';
 import { usePlayer, resolveTrack } from '../store/usePlayer';
 import { startDJ } from '../lib/djController';
 import { apiRequest } from '../services/api';
 import { ModelDialog } from './ModelDialog';
 import { startVoiceInput } from '../lib/voiceInput';
-import type { VoiceSession } from '../lib/voiceInput';
+import type { VoiceSession, VoicePhase } from '../lib/voiceInput';
 import { useVisualMotion } from '../lib/useVisualMotion';
+import { DJOrb } from './DJOrb';
 
 const SCENES = ['放松一下', '专注工作', '提提精神', '陪我入睡'];
 const moodDescription = (x: number, y: number) => `${y > 55 ? '明亮愉悦' : y < 45 ? '沉静内敛' : '平和舒适'}，${x > 60 ? '节奏动感，有活力' : x < 40 ? '轻柔舒缓，节奏慢一些' : '节奏适中'}的音乐`;
@@ -16,11 +17,14 @@ export function DJHome() {
   const [text, setText] = useState('');
   const [settings, setSettings] = useState(false);
   const [modelAvailable, setModelAvailable] = useState(false);
-  const [listening, setListening] = useState(false);
+  const [voicePhase, setVoicePhase] = useState<VoicePhase>('idle');
+  const listening = voicePhase === 'listening';
+  const voiceActive = voicePhase !== 'idle';
   const [voiceError, setVoiceError] = useState('');
   const [mood, setMood] = useState({ x: 35, y: 60 });
   const [moodOpen, setMoodOpen] = useState(false);
   const voice = useRef<VoiceSession | null>(null);
+  const composer = useRef<HTMLInputElement>(null);
   const active = usePlayer(s => s.djActive);
   const playing = usePlayer(s => s.isPlaying);
   const playbackStatus = usePlayer(s => s.playbackStatus);
@@ -36,16 +40,16 @@ export function DJHome() {
   const histories = usePlayer(s => s.djPlaylists);
   const current = resolveTrack({ importedTracks, remoteTracks }, queue[index]);
   const upcoming = queue.slice(Math.max(0, index + 1), Math.max(0, index + 1) + 3);
-  const animate = useVisualMotion(listening || busy || playing);
+  const animate = useVisualMotion(true);
   const orbitMotion = useVisualMotion(true);
-  const status = listening ? '正在听你说' : busy ? '正在挑选下一段音乐' : active ? playing ? '陪你听，继续为你选歌' : '音乐已暂停，随时继续' : '此刻，想听什么？';
+  const status = voicePhase === 'starting' ? '正在开启麦克风' : listening ? '正在听你说' : busy ? '正在挑选下一段音乐' : active ? playing ? '陪你听，继续为你选歌' : '音乐已暂停，随时继续' : '此刻，想听什么？';
   const direction = moodDescription(mood.x, mood.y);
   useEffect(() => () => voice.current?.abort(), []);
   const record = () => {
-    if (listening) { voice.current?.stop(); return; }
+    if (voiceActive) { voice.current?.stop(); return; }
     voice.current?.abort(); setVoiceError('');
     const prefix = text.trim();
-    voice.current = startVoiceInput({ onText: value => setText([prefix, value].filter(Boolean).join('，').slice(0, 300)), onListening: setListening, onError: setVoiceError });
+    voice.current = startVoiceInput({ onText: value => setText([prefix, value].filter(Boolean).join('，').slice(0, 300)), onListening: () => {}, onPhase: setVoicePhase, onError: setVoiceError });
   };
   useEffect(() => {
     const update = () => apiRequest<{ available: boolean }>('/api/dj/status').then(data => setModelAvailable(data.available)).catch(() => setModelAvailable(false));
@@ -53,14 +57,14 @@ export function DJHome() {
     return () => window.removeEventListener('aurora-connections', update);
   }, []);
   const submit = async (description: string) => {
-    voice.current?.abort(); setListening(false); setVoiceError('');
+    voice.current?.abort(); setVoicePhase('idle'); setVoiceError('');
     const draft = text;
     const success = await startDJ(description, active);
     if (success) { setText(value => value === draft ? '' : value); setMoodOpen(false); }
     else setText(value => value || description);
   };
   const moveMood = (event: PointerEvent<HTMLDivElement>) => {
-    if (busy || listening) return;
+    if (busy || voiceActive) return;
     const rect = event.currentTarget.getBoundingClientRect();
     setMood({ x: Math.round(Math.max(0, Math.min(100, (event.clientX - rect.left) / rect.width * 100))), y: Math.round(Math.max(0, Math.min(100, 100 - (event.clientY - rect.top) / rect.height * 100))) });
   };
@@ -72,20 +76,20 @@ export function DJHome() {
         <div className="presence-scene">
           <div className="presence-aura" aria-hidden="true"/>
           <div className="presence-orbit solar-system" aria-hidden="true">{[1, 2, 3].map(i => <div key={i} className={`solar-lane solar-lane-${i}`}><div className="solar-revolution"><span className="solar-planet"/></div></div>)}</div>
-          <button className="presence-orb" disabled={busy} onClick={record} aria-label={listening ? '结束语音输入' : '和 DJ 说话'} aria-pressed={listening}>
-            <span className="presence-fluid fluid-one"/><span className="presence-fluid fluid-two"/><span className="presence-fluid fluid-three"/>
-            <span className="presence-voice">{listening ? <span className="voice-bars" aria-hidden="true">{[0, 1, 2, 3, 4].map(i => <i key={i}/>)}</span> : busy ? <LoaderCircle size={34} className="spin"/> : <AudioLines size={36} strokeWidth={1.3}/>}</span>
+          <button className="presence-orb volume-orb" disabled={busy} onClick={record} aria-label={voicePhase === 'starting' ? '取消开启麦克风' : listening ? '结束语音输入' : '和 DJ 说话'} aria-pressed={voiceActive}>
+            <DJOrb animate={animate} phase={busy ? 'thinking' : voicePhase}/>
+            <span className="presence-voice">{listening ? <span className="voice-bars" aria-hidden="true">{[0, 1, 2, 3, 4].map(i => <i key={i}/>)}</span> : busy || voicePhase === 'starting' ? <LoaderCircle size={30} className="spin"/> : null}</span>
           </button>
           <span className="presence-coordinate coordinate-left" aria-hidden="true">YOUR MOOD</span><span className="presence-coordinate coordinate-right" aria-hidden="true">YOUR SOUND</span>
         </div>
         <h1>{listening ? '我在听。' : busy ? '让音乐接住此刻。' : active ? plan?.label || '这一段，为你而选。' : <>你的心情，<br/>我来配乐。</>}</h1>
         <p className="presence-description">{listening ? '说说心情，或告诉我想怎么调整。' : active ? plan?.intro : '不必想歌名，把这一刻交给我。'}</p>
-        <button className="presence-talk" disabled={busy} onClick={record}>{listening ? <Square size={14}/> : <Mic size={16}/>} {listening ? '说完了' : '点光球，和我说说'}<span>{listening ? '结束后确认文字' : '也可以在下方打字'}</span></button>
-        <form className="studio-composer" onSubmit={e => { e.preventDefault(); if (!busy && !listening && text.trim()) void submit(text.trim()); }}>
-          <input aria-label="告诉 DJ 当前心情" value={text} onChange={e => setText(e.target.value)} readOnly={listening} maxLength={300} placeholder={listening ? '你的话会显示在这里…' : active ? '比如：更安静一点，不要现场版…' : '比如：刚下班，想让脑袋放空…'}/>
-          <button type="submit" disabled={busy || listening || !text.trim()} aria-label={active ? '提交音乐调整' : '提交心情'}><ArrowUpRight size={19}/></button>
+        <button className="presence-talk" disabled={busy} onClick={record}>{voiceActive ? <Square size={14}/> : <Mic size={16}/>} {voicePhase === 'starting' ? '正在开启 · 点击取消' : listening ? '说完了' : '点光球，和我说说'}<span>{listening ? '结束后确认文字' : '也可以在下方打字'}</span></button>
+        <form className="studio-composer" onSubmit={e => { e.preventDefault(); if (!busy && !voiceActive && text.trim()) void submit(text.trim()); }}>
+          <input ref={composer} aria-label="告诉 DJ 当前心情" value={text} onChange={e => setText(e.target.value)} readOnly={voiceActive} maxLength={300} placeholder={voiceActive ? '你的话会显示在这里…' : active ? '比如：更安静一点，不要现场版…' : '比如：刚下班，想让脑袋放空…'}/>
+          <button type="submit" disabled={busy || voiceActive || !text.trim()} aria-label={active ? '提交音乐调整' : '提交心情'}><ArrowUpRight size={19}/></button>
         </form>
-        <div className="studio-feedback" aria-live="polite">{voiceError ? <p role="alert">{voiceError}</p> : listening ? <p>正在转写，结束后点击箭头确认。</p> : busy ? <p>{active ? '当前音乐照常播放，新的推荐马上接上。' : '正在寻找符合这个氛围的歌曲…'}</p> : null}</div>
+        <div className="studio-feedback" aria-live="polite">{voiceError ? <><p role="alert">{voiceError}</p><button className="voice-keyboard" onClick={() => composer.current?.focus()}>使用键盘语音输入</button></> : voicePhase === 'starting' ? <p>请允许麦克风，开启后再说话。</p> : listening ? <p>正在转写，结束后点击箭头确认。</p> : busy ? <p>{active ? '当前音乐照常播放，新的推荐马上接上。' : '正在寻找符合这个氛围的歌曲…'}</p> : null}</div>
       </section>
       <aside className="studio-side">
         {active && current && <section className="studio-session" aria-label="DJ 推荐歌单">
@@ -97,14 +101,14 @@ export function DJHome() {
         <section className="studio-mood" aria-label="心情坐标">
           {active ? <button className="mood-toggle" aria-expanded={moodOpen} aria-controls="dj-mood-controls" onClick={() => setMoodOpen(v => !v)}><span><Sparkles size={15}/>把氛围调到刚刚好</span><ChevronDown size={15}/></button> : <header><span><Sparkles size={15}/>不想说话？让心情带路</span><small>拖动光点</small></header>}
           <div id="dj-mood-controls" hidden={active && !moodOpen}>
-          <div className="mood-map" role="group" aria-label="拖动选择音乐氛围，或使用下方滑块" onPointerDown={e => { if (!busy && !listening) { e.currentTarget.setPointerCapture(e.pointerId); moveMood(e); } }} onPointerMove={e => { if (e.currentTarget.hasPointerCapture(e.pointerId)) moveMood(e); }} style={{ '--mood-x': `${mood.x}%`, '--mood-y': `${100 - mood.y}%` } as CSSProperties}>
+          <div className="mood-map" role="group" aria-label="拖动选择音乐氛围，或使用下方滑块" onPointerDown={e => { if (!busy && !voiceActive) { e.currentTarget.setPointerCapture(e.pointerId); moveMood(e); } }} onPointerMove={e => { if (e.currentTarget.hasPointerCapture(e.pointerId)) moveMood(e); }} style={{ '--mood-x': `${mood.x}%`, '--mood-y': `${100 - mood.y}%` } as CSSProperties}>
             <div className="mood-grid"/><span className="mood-axis axis-top">明亮</span><span className="mood-axis axis-bottom">沉静</span><span className="mood-axis axis-left">轻柔</span><span className="mood-axis axis-right">动感</span><span className="mood-glow"/><span className="mood-point"/>
           </div>
-          <div className="mood-accessible"><label>音乐动感<input type="range" min="0" max="100" value={mood.x} disabled={busy || listening} onChange={e => setMood(v => ({ ...v, x: Number(e.target.value) }))}/></label><label>心情明亮<input type="range" min="0" max="100" value={mood.y} disabled={busy || listening} onChange={e => setMood(v => ({ ...v, y: Number(e.target.value) }))}/></label></div>
-          <div className="mood-selection"><span>{mood.y > 55 ? '明亮' : mood.y < 45 ? '沉静' : '平和'} · {mood.x > 60 ? '动感' : mood.x < 40 ? '轻柔' : '适中'}</span><button disabled={busy || listening} onClick={() => submit(direction)}>{active ? '按这个氛围调整' : '就从这里开始'}<ArrowUpRight size={15}/></button></div>
+          <div className="mood-accessible"><label>音乐动感<input type="range" min="0" max="100" value={mood.x} disabled={busy || voiceActive} onChange={e => setMood(v => ({ ...v, x: Number(e.target.value) }))}/></label><label>心情明亮<input type="range" min="0" max="100" value={mood.y} disabled={busy || voiceActive} onChange={e => setMood(v => ({ ...v, y: Number(e.target.value) }))}/></label></div>
+          <div className="mood-selection"><span>{mood.y > 55 ? '明亮' : mood.y < 45 ? '沉静' : '平和'} · {mood.x > 60 ? '动感' : mood.x < 40 ? '轻柔' : '适中'}</span><button disabled={busy || voiceActive} onClick={() => submit(direction)}>{active ? '按这个氛围调整' : '就从这里开始'}<ArrowUpRight size={15}/></button></div>
           </div>
         </section>
-        <div className="studio-scenes">{(active ? ['更安静一点', '更有活力', '换一批'] : SCENES).map(scene => <button key={scene} disabled={busy || listening} onClick={() => submit(scene)}>{scene}<ArrowUpRight size={12}/></button>)}</div>
+        <div className="studio-scenes">{(active ? ['更安静一点', '更有活力', '换一批'] : SCENES).map(scene => <button key={scene} disabled={busy || voiceActive} onClick={() => submit(scene)}>{scene}<ArrowUpRight size={12}/></button>)}</div>
       </aside>
     </div>
     {error && <div className="studio-error" role="alert">{error}<button disabled={busy} onClick={() => submit(text.trim() || plan?.description || direction)}>再试一次</button></div>}
