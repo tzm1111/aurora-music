@@ -2,6 +2,23 @@ import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 let embeddedApi;
+let anonymousSetup;
+// 嵌入式 SDK 不执行 app.js 的匿名初始化；在内存中建立官方游客会话，不依赖 /tmp 文件。
+function embeddedCookie(cookie, timeoutMs) {
+  if (cookie) return Promise.resolve(cookie);
+  if (!anonymousSetup) {
+    anonymousSetup = embeddedApi.register_anonimous({ timeout: timeoutMs }).then(result => {
+      const { cookieToJson } = require('../../../music-api/node_modules/NeteaseCloudMusicApi/util/index.js');
+      const anonymous = cookieToJson(result.body?.cookie || '');
+      if (!anonymous.MUSIC_A) throw new Error('音乐服务游客会话初始化失败');
+      return { MUSIC_A: anonymous.MUSIC_A };
+    }).catch(() => {
+      anonymousSetup = undefined;
+      throw new Error('音乐服务游客会话暂时不可用');
+    });
+  }
+  return anonymousSetup;
+}
 // 网易云音乐 provider
 // 依赖本地运行的 NeteaseCloudMusicApi（见 aurora-music/music-api）
 // 只暴露：搜索、播放地址解析、健康检查
@@ -28,7 +45,10 @@ async function apiGet(path, params = {}, timeoutMs = 8000, cookie = '', allowedC
     if (!method) throw new Error('不支持的音乐接口');
     let timer;
     try {
-      const result = await Promise.race([embeddedApi[method]({ ...params, cookie }), new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('音乐接口超时')), timeoutMs); })]);
+      const result = await Promise.race([
+        embeddedCookie(cookie, timeoutMs).then(sessionCookie => embeddedApi[method]({ ...params, cookie: sessionCookie, timeout: timeoutMs })),
+        new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('音乐接口超时')), timeoutMs); }),
+      ]);
       const json = result.body;
       if (result.status >= 400 || (json.code && !allowedCodes.includes(json.code))) throw new Error(json.message || json.msg || '音乐接口暂时不可用');
       return json;

@@ -3,7 +3,7 @@ import type { CSSProperties, PointerEvent } from 'react';
 import { ArrowUpRight, LoaderCircle, Settings2, Mic, Square, ListMusic, ChevronRight, ChevronDown, Play, Pause, Sparkles, CircleAlert, Keyboard, AudioLines } from 'lucide-react';
 import { usePlayer, resolveTrack } from '../store/usePlayer';
 import { startDJ } from '../lib/djController';
-import { apiRequest } from '../services/api';
+import { API_BASE, ONLINE_PLAYER_URL, apiRequest } from '../services/api';
 import { ModelDialog } from './ModelDialog';
 import { startVoiceInput } from '../lib/voiceInput';
 import type { VoiceSession, VoicePhase } from '../lib/voiceInput';
@@ -106,7 +106,7 @@ export function DJHome() {
         </section>
       </aside>
     </div>
-    {error && <div className="studio-error compact-feedback"><details><summary aria-label="查看推荐错误详情"><CircleAlert size={16}/></summary><p>{error}</p></details><button disabled={busy} onClick={() => submit(text.trim() || plan?.description || direction)}>重试</button></div>}
+    {error && <div className="studio-error compact-feedback"><details><summary aria-label="查看推荐错误详情"><CircleAlert size={16}/></summary><p>{error}</p></details><button disabled={busy} onClick={() => submit(text.trim() || plan?.description || direction)}>重试</button>{API_BASE && <a href={ONLINE_PLAYER_URL} target="_blank" rel="noopener noreferrer">打开魔搭完整版</a>}</div>}
     {settings && <ModelDialog onClose={() => setSettings(false)}/>}
   </section>;
 }

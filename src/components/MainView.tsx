@@ -4,7 +4,7 @@ import { usePlayer } from '../store/usePlayer';
 import type { Track } from '../types';
 import { TRACKS } from '../data/tracks';
 import { TrackList } from './TrackList';
-import { fetchProviders, searchTracks } from '../services/api';
+import { API_BASE, ONLINE_PLAYER_URL, fetchProviders, searchTracks } from '../services/api';
 import type { ProviderId, ProviderStatus } from '../services/api';
 
 const SOURCES: { id: ProviderId; label: string }[] = [
@@ -169,7 +169,7 @@ export function MainView() {
               </span>
             </div>
             {remoteError ? (
-              <div className="empty-tip" role="alert">{remoteError}<button className="primary-action" onClick={() => { setRemoteLoading(true); setRetryKey(k => k + 1); }}>重试搜索</button></div>
+              <div className="empty-tip" role="alert">{remoteError}<button className="primary-action" onClick={() => { setRemoteLoading(true); setRetryKey(k => k + 1); }}>重试搜索</button>{API_BASE && <a className="primary-action" href={ONLINE_PLAYER_URL} target="_blank" rel="noopener noreferrer">打开魔搭完整版</a>}</div>
             ) : remote.length ? (
               <>
                 <TrackList tracks={remote} queue={remote.map(r => r.id)} />

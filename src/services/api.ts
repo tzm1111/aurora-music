@@ -2,6 +2,7 @@
 // 开发环境由 Vite 代理到 http://localhost:3001（见 vite.config.ts）
 import type { Track } from '../types';
 export const API_BASE = (import.meta.env?.VITE_API_BASE_URL || '').replace(/\/+$/, '');
+export const ONLINE_PLAYER_URL = 'https://www.modelscope.cn/studios/Tzm1111/aurora-music?mode=full';
 const SESSION_KEY = 'aurora-backend-session:' + API_BASE;
 export function apiUrl(path: string) { return API_BASE + path; }
 async function apiFetch(path: string, init: RequestInit = {}) {

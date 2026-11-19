@@ -76,3 +76,28 @@ try {
   assert.ok((await getPlayability(['105', '106'])).get('105')?.url);
   console.log('通过：播放客户端一致、空音源/异常回退、部分成功保护和版权空结果。');
 } finally { globalThis.fetch = originalFetch; }
+
+// 模拟 Serverless 冷启动：/tmp 中没有可用游客会话时，SDK 必须自行初始化。
+const { createRequire } = await import('node:module');
+const require = createRequire(import.meta.url);
+const sdkPath = require.resolve('../music-api/node_modules/NeteaseCloudMusicApi/main.js');
+const oldSdk = require.cache[sdkPath];
+let registrations = 0;
+require.cache[sdkPath] = { exports: {
+  register_anonimous: async () => { registrations++; return { body: { cookie: 'MUSIC_A=test-anonymous;' } }; },
+  song_url_v1: async params => {
+    assert.equal(params.cookie.MUSIC_A, 'test-anonymous');
+    assert.equal(params.timeout, 10000);
+    return { status: 200, body: { code: 200, data: params.id.split(',').map(id => ({ id, url: 'https://audio.example/' + id + '.mp3' })) } };
+  },
+} };
+process.env.NETEASE_EMBEDDED = '1';
+try {
+  const [a, b] = await Promise.all([getPlayability(['201']), getPlayability(['202'])]);
+  assert.ok(a.get('201')?.url && b.get('202')?.url);
+  assert.equal(registrations, 1);
+  console.log('通过：Serverless 冷启动游客会话、并发初始化去重与上游超时。');
+} finally {
+  if (oldSdk) require.cache[sdkPath] = oldSdk;
+  else delete require.cache[sdkPath];
+}
