@@ -146,9 +146,9 @@ export function AudioEngine() {
     }}
     onTimeUpdate={e => { if (!restoringPosition.current && e.currentTarget.readyState >= 1) usePlayer.getState().setProgress(e.currentTarget.currentTime); }}
     onDurationChange={e => usePlayer.getState().setDuration(e.currentTarget.duration)}
-    onPlaying={() => { failures.current = 0; usePlayer.setState({ playbackStatus: 'playing' }); }}
+    onPlaying={e => { if (!usePlayer.getState().isPlaying) { e.currentTarget.pause(); return; } failures.current = 0; usePlayer.setState({ playbackStatus: 'playing' }); }}
     onWaiting={() => { if (usePlayer.getState().isPlaying) usePlayer.setState({ playbackStatus: 'buffering' }); }}
     onStalled={() => { if (usePlayer.getState().isPlaying) usePlayer.setState({ playbackStatus: 'buffering' }); }}
-    onEnded={() => usePlayer.getState().trackEnded()}
+    onEnded={() => { if (usePlayer.getState().isPlaying) usePlayer.getState().trackEnded(); }}
     onError={fail} />;
 }

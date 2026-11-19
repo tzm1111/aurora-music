@@ -1,5 +1,6 @@
 // 浏览器语音识别：不保存录音，结果留在输入框由用户确认。
-type RecognitionEvent = { results: ArrayLike<ArrayLike<{ transcript: string }>> };
+type RecognitionResult = ArrayLike<{ transcript: string }> & { isFinal?: boolean };
+type RecognitionEvent = { results: ArrayLike<RecognitionResult> };
 export interface VoiceRecognition {
   lang: string;
   continuous: boolean;
@@ -8,27 +9,60 @@ export interface VoiceRecognition {
   onerror: ((event: { error: string }) => void) | null;
   onend: (() => void) | null;
   onstart: (() => void) | null;
+  onspeechend?: (() => void) | null;
+  onaudioend?: (() => void) | null;
   processLocally?: boolean;
   start: () => void;
   stop: () => void;
   abort: () => void;
 }
-type RecognitionConstructor = { new (): VoiceRecognition; available?: (options: { langs: string[]; processLocally: boolean }) => Promise<string> };
+export type RecognitionConstructor = { new (): VoiceRecognition; available?: (options: { langs: string[]; processLocally: boolean }) => Promise<string> };
 type VoiceBrowser = { SpeechRecognition?: RecognitionConstructor; webkitSpeechRecognition?: RecognitionConstructor };
 export function voiceRecognitionConstructor(): RecognitionConstructor | undefined {
   const browser = globalThis as VoiceBrowser;
   return browser.SpeechRecognition || browser.webkitSpeechRecognition;
 }
+function speechPolicy() {
+  return typeof document === 'undefined' ? undefined : (document as Document & { permissionsPolicy?: { allowsFeature: (feature: string) => boolean } }).permissionsPolicy;
+}
+const localAvailability = new WeakMap<RecognitionConstructor, boolean>();
+const localPreparation = new WeakMap<RecognitionConstructor, Promise<void>>();
+// 只查询已安装的语言能力，不申请麦克风、不下载模型，也不阻塞点击。
+export function prepareVoiceInput(Constructor = voiceRecognitionConstructor()): Promise<void> {
+  if (!Constructor?.available || globalThis.isSecureContext === false || speechPolicy()?.allowsFeature('on-device-speech-recognition') === false) return Promise.resolve();
+  if (localAvailability.has(Constructor)) return Promise.resolve();
+  const pending = localPreparation.get(Constructor);
+  if (pending) return pending;
+  const preparation = Promise.resolve().then(() => Constructor.available!({ langs: ['zh-CN'], processLocally: true }))
+    .then(value => { localAvailability.set(Constructor, value === 'available'); })
+    .catch(() => { localAvailability.set(Constructor, false); })
+    .finally(() => localPreparation.delete(Constructor));
+  localPreparation.set(Constructor, preparation);
+  return preparation;
+}
 export type VoiceSession = { stop: () => void; abort: () => void };
-export type VoicePhase = 'idle' | 'starting' | 'listening';
-export function startVoiceInput(callbacks: { onText: (text: string) => void; onListening: (value: boolean) => void; onError: (message: string) => void; onPhase?: (phase: VoicePhase) => void }, Constructor = voiceRecognitionConstructor()): VoiceSession | null {
+export type VoicePhase = 'idle' | 'starting' | 'listening' | 'stopping';
+export function voiceErrorTitle(message: string) {
+  if (!message) return '';
+  if (message.includes('不支持网页语音识别')) return '当前浏览器不支持语音';
+  if (message.includes('内嵌页面')) return '当前窗口无法使用麦克风';
+  if (message.includes('麦克风未获授权')) return '麦克风未获授权';
+  if (message.includes('未允许语音识别服务')) return '浏览器限制了语音识别';
+  if (message.includes('语音识别服务连接失败')) return '语音服务连接失败';
+  if (message.includes('未找到可用麦克风')) return '未找到麦克风';
+  if (message.includes('HTTPS')) return '语音需要安全连接';
+  if (message.includes('没有听清')) return '没有听清，请再试一次';
+  return '语音未能启动';
+}
+export type VoiceCallbacks = { onText: (text: string) => void; onListening: (value: boolean) => void; onError: (message: string) => void; onPhase?: (phase: VoicePhase) => void };
+export function startVoiceInput(callbacks: VoiceCallbacks, Constructor = voiceRecognitionConstructor()): VoiceSession | null {
   if (globalThis.isSecureContext === false) {
     callbacks.onError('语音需要 HTTPS 页面，请通过正式网站地址打开播放器。');
     return null;
   }
-  const policy = typeof document === 'undefined' ? undefined : (document as Document & { permissionsPolicy?: { allowsFeature: (feature: string) => boolean } }).permissionsPolicy;
+  const policy = speechPolicy();
   if (policy && !policy.allowsFeature('microphone')) {
-    callbacks.onError('当前内嵌页面无法使用麦克风，请在手机浏览器中打开播放器；也可用键盘上的语音输入。');
+    callbacks.onError('当前内嵌页面无法使用麦克风，请在独立浏览器中打开播放器；手机也可用键盘上的语音输入。');
     return null;
   }
   if (!Constructor) {
@@ -43,38 +77,73 @@ export function startVoiceInput(callbacks: { onText: (text: string) => void; onL
   let failed = false;
   let ended = false;
   let started = false;
+  let stopping = false;
+  let captureReleased = false;
+  let lastText = '';
+  let pendingText = '';
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let textTimer: ReturnType<typeof setTimeout> | undefined;
   recognition.lang = 'zh-CN';
   recognition.continuous = false;
   recognition.interimResults = true;
-  const finish = () => {
-    if (ended) return;
-    ended = true; clearTimeout(timer);
-    callbacks.onListening(false); callbacks.onPhase?.('idle');
+  const flushText = () => {
+    clearTimeout(textTimer); textTimer = undefined;
+    if (!cancelled && !ended && pendingText && pendingText !== lastText) {
+      lastText = pendingText; callbacks.onText(lastText);
+    }
   };
-  const abortRecognition = () => { try { recognition.abort(); } catch { /* 部分手机浏览器在识别已结束后会抛异常。 */ } };
+  const releaseCapture = () => {
+    if (captureReleased) return;
+    captureReleased = true; callbacks.onListening(false);
+  };
+  const finish = (abort = false) => {
+    if (ended) return;
+    flushText(); ended = true; clearTimeout(timer); clearTimeout(textTimer);
+    recognition.onresult = null; recognition.onerror = null; recognition.onend = null; recognition.onstart = null;
+    recognition.onspeechend = null; recognition.onaudioend = null;
+    if (abort) { try { recognition.abort(); } catch { /* 手机浏览器可能在识别结束后抛异常。 */ } }
+    releaseCapture(); callbacks.onPhase?.('idle');
+  };
+  const awaitFinalResult = () => {
+    clearTimeout(timer);
+    // 保留末尾文字的等待窗口；超时也必须释放真正的识别资源。
+    timer = setTimeout(() => finish(true), 1500);
+  };
   const stopRecording = () => {
-    if (cancelled || ended) return;
-    if (!started) { cancelled = true; finish(); abortRecognition(); return; }
-    try { recognition.stop(); } catch { finish(); }
-    if (!ended) { clearTimeout(timer); timer = setTimeout(finish, 3000); }
+    if (cancelled || ended || stopping) return;
+    if (!started) { cancelled = true; finish(true); return; }
+    stopping = true; callbacks.onPhase?.('stopping');
+    try { recognition.stop(); }
+    catch { finish(true); }
+    if (!ended) awaitFinalResult();
   };
   recognition.onstart = () => {
-    if (cancelled || ended) return;
-    started = true;
-    clearTimeout(timer);
+    if (cancelled || ended || started || stopping) return;
+    started = true; clearTimeout(timer);
     callbacks.onPhase?.('listening'); callbacks.onListening(true);
     timer = setTimeout(stopRecording, 30000);
   };
   recognition.onresult = event => {
     if (cancelled || failed || ended) return;
-    const text = Array.from(event.results).map(result => result[0]?.transcript || '').join('').trim();
-    if (text) { heard = true; callbacks.onText(text); }
+    const results = Array.from(event.results);
+    const text = results.map(result => result[0]?.transcript || '').join('').trim().slice(0, 300);
+    if (!text) return;
+    if (text === pendingText) { if (results.every(result => result.isFinal === true)) flushText(); return; }
+    heard = true; pendingText = text;
+    // 高频中间结果合并刷新；最终文字立即呈现，不漏掉句尾。
+    if (results.every(result => result.isFinal === true)) flushText();
+    else textTimer ??= setTimeout(flushText, 60);
+  };
+  recognition.onspeechend = stopRecording;
+  recognition.onaudioend = () => {
+    if (cancelled || ended) return;
+    flushText();
+    if (!stopping) { stopping = true; callbacks.onPhase?.('stopping'); }
+    releaseCapture(); awaitFinalResult();
   };
   recognition.onerror = event => {
     if (cancelled || ended) return;
-    failed = true;
-    finish();
+    failed = true; finish(true);
     const messages: Record<string, string> = {
       'not-allowed': '麦克风未获授权，请在浏览器中允许麦克风后重试。',
       'service-not-allowed': '浏览器未允许语音识别服务，请改用 Chrome 或 Edge。',
@@ -89,28 +158,16 @@ export function startVoiceInput(callbacks: { onText: (text: string) => void; onL
     finish();
     if (!heard && !failed) callbacks.onError('没有听清，再说一次吧。');
   };
-  const start = () => {
-    if (cancelled || ended) return;
-    try { recognition.start(); }
-    catch { failed = true; finish(); callbacks.onError('无法开启语音输入，请检查浏览器麦克风权限。'); }
-  };
   callbacks.onPhase?.('starting');
   timer = setTimeout(() => {
     if (ended) return;
-    cancelled = true; finish(); abortRecognition();
+    cancelled = true; finish(true);
     callbacks.onError('麦克风未能启动，请检查权限，或使用手机键盘的语音输入。');
   }, 10000);
-  // Safari/WebKit 必须在点击回调中同步启动，不能先等待权限查询。
-  // 支持本机识别的浏览器只使用已安装语言，不自动下载模型。
-  if (Constructor.available && 'processLocally' in recognition && (!policy || policy.allowsFeature('on-device-speech-recognition'))) {
-    Constructor.available({ langs: ['zh-CN'], processLocally: true }).then(availability => {
-      if (availability === 'available') recognition.processLocally = true;
-      start();
-    }).catch(start);
-  } else start();
+  if (localAvailability.get(Constructor) && 'processLocally' in recognition && (!policy || policy.allowsFeature('on-device-speech-recognition'))) recognition.processLocally = true;
+  // Safari/WebKit 必须在点击回调中同步启动；能力查询已提前完成。
+  try { recognition.start(); }
+  catch { failed = true; finish(true); callbacks.onError('无法开启语音输入，请检查浏览器麦克风权限。'); }
   if (failed) return null;
-  return {
-    stop: stopRecording,
-    abort: () => { cancelled = true; finish(); recognition.onresult = null; recognition.onerror = null; recognition.onend = null; recognition.onstart = null; abortRecognition(); },
-  };
+  return { stop: stopRecording, abort: () => { cancelled = true; finish(true); } };
 }

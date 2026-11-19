@@ -13,7 +13,7 @@
     "dev:all": "node scripts/dev-all.mjs",
     "start": "node scripts/start-production.mjs",
     "test:deployment": "npm run build && node scripts/check-deployment.mjs",
-    "test": "node scripts/check-player.mjs && node scripts/check-dj.mjs && node scripts/check-dj-controller.mjs && node scripts/check-context-mix.mjs && node scripts/check-dj-diversity.mjs && node scripts/check-voice.mjs && node scripts/check-weather.mjs && node scripts/check-canvas.mjs && node scripts/check-api-connection.mjs",
+    "test": "node scripts/check-player.mjs && node scripts/check-dj.mjs && node scripts/check-dj-controller.mjs && node scripts/check-context-mix.mjs && node scripts/check-dj-diversity.mjs && node scripts/check-voice.mjs && node scripts/check-voice-playback.mjs && node scripts/check-weather.mjs && node scripts/check-canvas.mjs && node scripts/check-api-connection.mjs",
     "test:session": "node scripts/check-sealed-session.mjs"
   },
   "dependencies": {
