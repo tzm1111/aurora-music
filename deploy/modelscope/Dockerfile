@@ -2,7 +2,7 @@
 FROM node:22-bookworm-slim AS frontend
 RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates && rm -rf /var/lib/apt/lists/*
 WORKDIR /app/source
-RUN git init && git remote add origin https://github.com/tzm1111/aurora-music.git && git fetch --depth=1 origin 09344e881be6ced615d4154a6ad823c9f97bb497 && git checkout --detach FETCH_HEAD && rm -rf .git
+RUN git init && git remote add origin https://github.com/tzm1111/aurora-music.git && git fetch --depth=1 origin 9be35db5c9f5468b7244ca1673faacc0512ebe14 && git checkout --detach FETCH_HEAD && rm -rf .git
 RUN npm ci
 RUN npm run build
 
