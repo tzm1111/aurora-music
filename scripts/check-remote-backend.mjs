@@ -11,10 +11,20 @@ async function request(path, options = {}) {
     signal: AbortSignal.timeout(55000),
   });
 }
-const health = await request('/api/health');
-assert.equal(health.status, 200, '后端健康检查失败');
-assert.equal(health.headers.get('access-control-allow-origin'), origin);
-assert.equal((await health.json()).status, 'ok');
+let health;
+let healthData;
+const deadline = Date.now() + 180000;
+do {
+  health = await request('/api/health');
+  assert.equal(health.status, 200, '后端健康检查失败');
+  assert.equal(health.headers.get('access-control-allow-origin'), origin);
+  healthData = await health.json();
+  if (!process.env.GITHUB_SHA || healthData.deploymentCommit === process.env.GITHUB_SHA) break;
+  assert.ok(Date.now() < deadline, 'Vercel 未在 3 分钟内发布当前提交');
+  console.log('等待 Vercel 发布当前提交，避免检验上一版后端。');
+  await new Promise(resolve => setTimeout(resolve, 5000));
+} while (true);
+assert.equal(healthData.status, 'ok');
 console.log('通过：公开 API 与 GitHub Pages 跨域访问。');
 const search = await request('/api/music/search?source=netease&q=Laufey&limit=5');
 assert.equal(search.status, 200, '网易云搜索失败');

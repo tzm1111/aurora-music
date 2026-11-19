@@ -34,6 +34,7 @@ app.use('/api/dj', djRouter);
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'ok',
+    deploymentCommit: process.env.VERCEL_GIT_COMMIT_SHA || null,
     timestamp: new Date().toISOString(),
     services: {
       llm: process.env.LLM_PROVIDER || 'disabled',
