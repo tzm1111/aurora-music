@@ -9,7 +9,16 @@ async function apiFetch(path: string, init: RequestInit = {}) {
   if (API_BASE) {
     try { const token = sessionStorage.getItem(SESSION_KEY); if (token) headers.set('X-Aurora-Session', token); } catch { /* 受限浏览器仍可匿名播放 */ }
   }
-  const response = await fetch(apiUrl(path), { ...init, headers, credentials: API_BASE ? 'omit' : 'same-origin' });
+  const timeout = AbortSignal.timeout(path === '/api/dj/session' ? 55000 : 25000);
+  const signal = init.signal ? AbortSignal.any([init.signal, timeout]) : timeout;
+  let response: Response;
+  try {
+    response = await fetch(apiUrl(path), { ...init, headers, signal, credentials: API_BASE ? 'omit' : 'same-origin' });
+  } catch (error) {
+    if (init.signal?.aborted) throw error; // 用户取消或搜索切换，不显示网络错误。
+    if (timeout.aborted) throw new Error('音乐服务响应超时，请稍后重试。');
+    throw new Error('无法连接音乐服务，请检查网络或使用魔搭在线入口。');
+  }
   const token = API_BASE ? response.headers.get('X-Aurora-Session') : null;
   if (API_BASE && token) { try { sessionStorage.setItem(SESSION_KEY, token); } catch { /* 不持久化登录状态 */ } }
   return response;

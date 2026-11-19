@@ -18,6 +18,10 @@ function baseUrl() {
 }
 
 async function apiGet(path, params = {}, timeoutMs = 8000, cookie = '', allowedCodes = [200]) {
+  // SDK 默认使用 PC 客户端 Cookie；播放接口保持同一客户端身份，不改写账号或地区。
+  if (path === '/song/url/v1' || path === '/song/url') {
+    params = { ...params, ua: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36' };
+  }
   if (process.env.NETEASE_EMBEDDED === '1') {
     embeddedApi ||= require('../../../music-api/node_modules/NeteaseCloudMusicApi/main.js');
     const method = { '/cloudsearch': 'cloudsearch', '/search': 'search', '/song/url/v1': 'song_url_v1', '/song/url': 'song_url', '/login/qr/key': 'login_qr_key', '/login/qr/create': 'login_qr_create', '/login/qr/check': 'login_qr_check', '/login/status': 'login_status' }[path];
@@ -115,10 +119,26 @@ export async function getPlayability(ids, cookie = '') {
   if (!ids.length) return new Map();
   const safeIds = ids.map(String).filter(id => /^\d+$/.test(id)).slice(0, 30);
   if (!safeIds.length) return new Map();
-  let json;
-  try { json = await apiGet('/song/url/v1', { id: safeIds.join(','), level: 'exhigh' }, 10000, cookie); }
-  catch { json = await apiGet('/song/url', { id: safeIds.join(','), br: 320000 }, 10000, cookie); }
-  return new Map((json.data || []).map(item => [String(item.id), cacheAudio(item, cookie)]));
+  const result = new Map(safeIds.map(id => [id, null]));
+  try {
+    const json = await apiGet('/song/url/v1', { id: safeIds.join(','), level: 'exhigh' }, 10000, cookie);
+    for (const item of json.data || []) {
+      if (result.has(String(item.id))) result.set(String(item.id), cacheAudio(item, cookie));
+    }
+  } catch { /* v1 不可用时尝试旧接口，仍遵守原账号的版权权限。 */ }
+  // v1 即使返回 200，也可能只给部分歌曲空 URL；只补查缺失的歌曲，不覆盖已有音源。
+  const missing = safeIds.filter(id => !result.get(id));
+  if (missing.length) {
+    try {
+      const json = await apiGet('/song/url', { id: missing.join(','), br: 320000 }, 10000, cookie);
+      for (const item of json.data || []) {
+        if (result.has(String(item.id)) && !result.get(String(item.id))) result.set(String(item.id), cacheAudio(item, cookie));
+      }
+    } catch (error) {
+      if (![...result.values()].some(Boolean)) throw error;
+    }
+  }
+  return result;
 }
 export async function getStreamUrl(neteaseId, cookie = '') {
   const cached = urlCache.get(cacheKey(String(neteaseId), cookie));

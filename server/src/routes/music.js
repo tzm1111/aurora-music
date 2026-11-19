@@ -119,7 +119,14 @@ router.get('/playback/netease/:id', requirePlayerOrigin, async (req, res) => {
     const ticket = seal({ id, url, expires: Date.now() + 5 * 60 * 1000 }, 'aurora-media');
     res.set('Cache-Control', 'no-store');
     res.json({ success: true, src: `/api/music/stream/netease/${id}?ticket=${encodeURIComponent(ticket)}` });
-  } catch { res.status(502).json({ success: false, error: { message: '当前歌曲音源不可用，请重试或换一首。' } }); }
+  } catch (error) {
+    // 不记录 SDK 原始错误对象，避免其请求配置携带账号 Cookie。
+    const code = error.code === 'NO_AUDIO' ? 'NO_AUDIO' : 'PLAYBACK_ERROR';
+    console.error('播放票据失败:', { id, code, errorType: error.name || 'ProviderError' });
+    res.status(code === 'NO_AUDIO' ? 404 : 502).json({ success: false, error: {
+      code, message: code === 'NO_AUDIO' ? '当前账号没有可用音源，可能受版权或会员限制。' : '音乐服务暂时无法获取音源，请稍后重试。',
+    } });
+  }
 });
 
 /**

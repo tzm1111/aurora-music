@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 const base = process.env.AURORA_API_URL;
 assert.ok(base, '请设置 AURORA_API_URL');
 const origin = 'https://tzm1111.github.io';
+console.log('验证后端:', new URL(base).origin);
 async function request(path, options = {}) {
   return fetch(new URL(path, base), {
     ...options,
@@ -23,16 +24,32 @@ let playable;
 for (const song of songs.tracks) {
   const response = await request('/api/music/playback/netease/' + song.sourceId);
   if (response.ok) { playable = await response.json(); break; }
+  const failure = await response.json().catch(() => ({}));
+  console.log('音源检查失败:', song.sourceId, 'HTTP', response.status, failure.error?.code || 'UNKNOWN');
 }
 assert.ok(playable?.src, '未获得可播放歌曲');
 const audio = await request(playable.src, { headers: { Range: 'bytes=0-1023' } });
-assert.ok(audio.ok, '音频代理失败');
+assert.equal(audio.status, 206, '音频代理没有返回 Range 分段响应');
+assert.match(audio.headers.get('content-range') || '', /^bytes 0-1023\//);
+assert.equal(audio.headers.get('access-control-allow-origin'), origin);
 const reader = audio.body.getReader();
 assert.ok((await reader.read()).value?.length, '音频为空');
 await reader.cancel();
 console.log('通过：真实歌曲搜索、播放票据和音频数据。');
 const foreign = await request('/api/music/playback/netease/1', { headers: { Origin: 'https://example.com' } });
 assert.equal(foreign.status, 403);
+const preflight = await request('/api/dj/session', { method: 'OPTIONS', headers: {
+  'Access-Control-Request-Method': 'POST', 'Access-Control-Request-Headers': 'content-type,x-aurora-session',
+} });
+assert.equal(preflight.status, 204);
+assert.equal(preflight.headers.get('access-control-allow-origin'), origin);
+const dj = await request('/api/dj/session', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ description: '放松的纯音乐' }) });
+const set = await dj.json();
+assert.equal(dj.status, 200, 'DJ 推荐失败：' + (set.error?.message || dj.status));
+assert.ok(set.success && set.tracks?.length > 0, 'DJ 未返回歌曲');
+console.log('通过：Pages 预检与 DJ 推荐，曲目数', set.tracks.length);
+// 登录校验仅显式开启时执行，普通部署验证不创建登录会话。
+if (process.env.AURORA_TEST_LOGIN === '1') {
 const qr = await request('/api/account/qr', { method: 'POST' });
 assert.equal(qr.status, 200, '登录二维码生成失败');
 const session = qr.headers.get('x-aurora-session');
@@ -42,3 +59,4 @@ const check = await request('/api/account/check', { method: 'POST', headers: { '
 assert.equal(check.status, 200);
 assert.equal((await check.json()).status, 'waiting');
 console.log('通过：来源限制、登录二维码和跨实例扫码会话。');
+}
