@@ -116,15 +116,4 @@
 @media (max-width:767px) { .solar-planet { width:7px; height:7px; margin:-3.5px; }.has-session .solar-planet { width:5px; height:5px; margin:-2.5px; }.has-session .solar-lane-2 .solar-planet,.has-session .solar-lane-3 .solar-planet { width:4px; height:4px; margin:-2px; } }
 @media (prefers-reduced-motion:reduce) { .solar-revolution { animation:none; }.solar-lane-2 .solar-revolution { rotate:120deg; }.solar-lane-3 .solar-revolution { rotate:235deg; } }
 
-/* 体积光球：球面高光、内部光带与地面投影。WebGL 不可用时保留立体渐变。 */
-.presence-orb.volume-orb { padding:0; border:0; overflow:visible; background:transparent; box-shadow:0 0 42px #595bd52c,0 0 80px #2bcddd18; z-index:1; }
-.volume-orb:hover:not(:disabled) { box-shadow:0 0 50px #7784e844,0 0 90px #46dddb22; }
-.orb-fallback,.orb-volume,.orb-glass { position:absolute; inset:0; width:100%; height:100%; border-radius:50%; pointer-events:none; }
-.orb-fallback { background:radial-gradient(ellipse at 29% 23%,#dbffffb3,transparent 18%),radial-gradient(ellipse at 32% 63%,#17ebcf,transparent 44%),radial-gradient(ellipse at 73% 48%,#df47cb,transparent 48%),radial-gradient(ellipse at 56% 83%,#636cfa,transparent 50%),#071532; box-shadow:inset -18px -21px 28px #020619b3,inset 0 0 16px #73d9ff4d; }
-.orb-volume { opacity:0; }.orb-volume.is-rendered { opacity:1; }
-.orb-glass { box-shadow:inset 0 0 1px 1px #b9e9ff40,inset -3px -7px 10px #02062340; background:radial-gradient(ellipse at 32% 20%,#e7ffff17,transparent 35%); }
-.presence-scene::after { content:''; position:absolute; width:45%; height:13px; bottom:12%; border-radius:50%; background:#666de747; filter:blur(15px); z-index:-1; pointer-events:none; }
-.is-listening .presence-orb.volume-orb { box-shadow:0 0 56px #44dada4a,0 0 92px #916cf62a; }
-.volume-orb .presence-voice { pointer-events:none; color:#f1f8ff; filter:drop-shadow(0 2px 8px #050817); }
-.voice-keyboard { color:#c3e6df; text-decoration:underline; text-underline-offset:3px; min-height:40px; padding:4px 8px; font-size:11px; }
-@media (max-width:767px) { .presence-scene::after { bottom:9%; }.has-session .presence-scene::after { width:66%; bottom:8%; height:6px; } }
+.voice-keyboard { color:#c3e6df; min-height:40px; padding:4px 8px; font-size:11px; }

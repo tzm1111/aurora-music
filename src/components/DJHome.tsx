@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties, PointerEvent } from 'react';
-import { ArrowUpRight, LoaderCircle, Settings2, Mic, Square, ListMusic, ChevronRight, ChevronDown, Play, Pause, Sparkles, CircleAlert, Keyboard } from 'lucide-react';
+import { ArrowUpRight, LoaderCircle, Settings2, Mic, Square, ListMusic, ChevronRight, ChevronDown, Play, Pause, Sparkles, CircleAlert, Keyboard, AudioLines } from 'lucide-react';
 import { usePlayer, resolveTrack } from '../store/usePlayer';
 import { startDJ } from '../lib/djController';
 import { apiRequest } from '../services/api';
@@ -8,7 +8,6 @@ import { ModelDialog } from './ModelDialog';
 import { startVoiceInput } from '../lib/voiceInput';
 import type { VoiceSession, VoicePhase } from '../lib/voiceInput';
 import { useVisualMotion } from '../lib/useVisualMotion';
-import { DJOrb } from './DJOrb';
 
 const SCENES = ['放松一下', '专注工作', '提提精神', '陪我入睡'];
 const moodDescription = (x: number, y: number) => `${y > 55 ? '明亮愉悦' : y < 45 ? '沉静内敛' : '平和舒适'}，${x > 60 ? '节奏动感，有活力' : x < 40 ? '轻柔舒缓，节奏慢一些' : '节奏适中'}的音乐`;
@@ -73,10 +72,11 @@ export function DJHome() {
       <section className="studio-presence" aria-label="与 DJ 对话">
         <div className="presence-scene">
           <div className="presence-aura" aria-hidden="true"/>
+
           <div className="presence-orbit solar-system" aria-hidden="true">{[1, 2, 3].map(i => <div key={i} className={`solar-lane solar-lane-${i}`}><div className="solar-revolution"><span className="solar-planet"/></div></div>)}</div>
-          <button className="presence-orb volume-orb" disabled={busy} onClick={record} aria-label={voicePhase === 'starting' ? '取消开启麦克风' : listening ? '结束语音输入' : '和 DJ 说话'} aria-pressed={voiceActive}>
-            <DJOrb animate={animate} phase={busy ? 'thinking' : voicePhase}/>
-            <span className="presence-voice">{listening ? <span className="voice-bars" aria-hidden="true">{[0, 1, 2, 3, 4].map(i => <i key={i}/>)}</span> : busy || voicePhase === 'starting' ? <LoaderCircle size={30} className="spin"/> : null}</span>
+          <button className="presence-orb" disabled={busy} onClick={record} aria-label={voicePhase === 'starting' ? '取消开启麦克风' : listening ? '结束语音输入' : '和 DJ 说话'} aria-pressed={voiceActive}>
+            <span className="presence-fluid fluid-one"/><span className="presence-fluid fluid-two"/><span className="presence-fluid fluid-three"/>
+            <span className="presence-voice">{listening ? <span className="voice-bars" aria-hidden="true">{[0, 1, 2, 3, 4].map(i => <i key={i}/>)}</span> : busy || voicePhase === 'starting' ? <LoaderCircle size={30} className="spin"/> : <AudioLines size={36} strokeWidth={1.3}/>}</span>
           </button>
         </div>
         <h1 aria-live="polite">{status}</h1>

@@ -84,3 +84,19 @@
 @media (prefers-reduced-motion:no-preference) {
   .studio-mood.is-open #dj-mood-controls,.studio-session { animation:page-appear .2s ease-out; }
 }
+
+/* 原版青紫流光与三条环绕轨道，保留简洁的居中布局。 */
+.presence-scene,.has-session .presence-scene { height:270px; margin:0 auto 18px; }
+.presence-orb,.has-session .presence-orb { width:202px; height:202px; }
+.presence-orbit,.has-session .presence-orbit { width:268px; height:268px; }
+.presence-voice { pointer-events:none; }
+@media (max-width:767px) {
+  .presence-scene,.has-session .presence-scene { height:224px; margin-bottom:18px; }
+  .presence-orb,.has-session .presence-orb { width:160px; height:160px; }
+  .presence-orbit,.has-session .presence-orbit { width:200px; height:200px; }
+}
+
+.audio-err.compact-feedback { flex-direction:row; align-items:center; gap:6px; padding:6px 10px; border-radius:16px; }
+.audio-err.compact-feedback .error-actions { display:flex; align-items:center; margin:0; gap:6px; }
+.audio-err.compact-feedback .error-actions button { padding:6px 10px; min-height:36px; }
+.audio-err.compact-feedback:has(details[open]) { align-items:flex-start; }
