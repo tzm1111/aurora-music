@@ -48,7 +48,7 @@ for(const [source,target] of modules){
  await fs.writeFile(temp+'/'+target,code);
 }
 const saved=new Map();globalThis.localStorage={getItem:k=>saved.get(k)??null,setItem:(k,v)=>saved.set(k,v),removeItem:k=>saved.delete(k)};
-const {useLocalWeather,loadLocalWeather}=await import(temp+'/weather-client.mjs');
+const {useLocalWeather,loadLocalWeather,startWeatherUpdates,refreshCurrentWeather}=await import(temp+'/weather-client.mjs');
 const ok=data=>({ok:true,json:async()=>({success:true,...data})});
 globalThis.fetch=async path=>{if(path.endsWith('/location'))throw new Error('offline');return ok({weather});};
 await loadLocalWeather({name:'当前位置',kind:'device',latitude:31.22,longitude:121.55});
@@ -60,5 +60,53 @@ globalThis.fetch=async()=>ok({weather});
 await loadLocalWeather({name:'浦东新区',district:'浦东新区',city:'上海市',kind:'manual',latitude:31.223456,longitude:121.54321});
 releaseLocation();await pending;
 assert.equal(useLocalWeather.getState().location.district,'浦东新区');assert.equal(useLocalWeather.getState().location.latitude,31.22);assert.equal(useLocalWeather.getState().location.kind,'manual');assert.equal(useLocalWeather.getState().busy,false);
+// 首次授权、权限变更、返回页面和不支持 Permissions API 的浏览器。
+const originalNavigator = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+const originalNow = Date.now;
+let now = originalNow(); Date.now = () => now;
+globalThis.document = new EventTarget(); document.visibilityState = 'visible';
+globalThis.window = new EventTarget();
+const permission = new EventTarget(); permission.state = 'prompt';
+let geolocationCalls = 0, weatherCalls = 0, geoOptions;
+const geolocation = { getCurrentPosition: (success, _failure, options) => {
+  geolocationCalls++; geoOptions = options;
+  success({coords:{latitude:31.22 + geolocationCalls * 0.02,longitude:121.55}});
+} };
+Object.defineProperty(globalThis, 'navigator', {configurable:true,value:{geolocation,permissions:{query:async()=>permission}}});
+globalThis.fetch=async path=>{
+  if(path.endsWith('/location'))return ok({location:{name:'浦东新区',district:'浦东新区',city:'上海市',latitude:31.24,longitude:121.55}});
+  weatherCalls++;return ok({weather:{...weather,fetchedAt:now}});
+};
+const settle=async()=>{for(let i=0;i<12;i++)await Promise.resolve();};
+useLocalWeather.setState({location:null,data:null,busy:false,error:null});
+const stopFirst=startWeatherUpdates(); stopFirst(); // React StrictMode 的第一次卸载。
+const stopAuto=startWeatherUpdates(); const stopDuplicate=startWeatherUpdates();
+await settle();
+assert.equal(geolocationCalls,1,'首次打开应申请定位，多个组件不能重复申请');
+assert.equal(geoOptions.maximumAge,60000);
+assert.equal(useLocalWeather.getState().data.temperature,12);
+window.dispatchEvent(new Event('focus'));refreshCurrentWeather();await settle();
+assert.equal(geolocationCalls,1,'新鲜定位不应在每次聚焦时重复获取');
+now+=16*60*1000;document.dispatchEvent(new Event('visibilitychange'));await settle();
+assert.equal(geolocationCalls,2,'返回页面后应重新定位而非只更新旧坐标');
+await loadLocalWeather({name:'手动地区',district:'手动地区',kind:'manual',latitude:30,longitude:120});
+now+=16*60*1000;const countBeforeManual=weatherCalls;
+document.dispatchEvent(new Event('visibilitychange'));await settle();
+assert.equal(geolocationCalls,2);assert.equal(weatherCalls,countBeforeManual+1);
+assert.equal(useLocalWeather.getState().location.kind,'manual');
+stopDuplicate();stopAuto();
+useLocalWeather.setState({location:null,data:null,busy:false,error:null});permission.state='denied';
+const stopDenied=startWeatherUpdates();await settle();
+assert.equal(geolocationCalls,2);assert.ok(useLocalWeather.getState().error.includes('允许定位'));
+permission.state='granted';permission.dispatchEvent(new Event('change'));await settle();
+assert.equal(geolocationCalls,3,'用户允许定位后应自动继续');stopDenied();
+useLocalWeather.setState({location:null,data:null,busy:false,error:null});
+Object.defineProperty(globalThis,'navigator',{configurable:true,value:{geolocation}});
+const stopNoPermissions=startWeatherUpdates();await settle();
+assert.equal(geolocationCalls,4,'缺少 Permissions API 时仍应调用浏览器定位');stopNoPermissions();
+now+=16*60*1000;document.dispatchEvent(new Event('visibilitychange'));await settle();
+assert.equal(geolocationCalls,4,'卸载后应清理自动更新监听');
+Date.now=originalNow;
+if(originalNavigator)Object.defineProperty(globalThis,'navigator',originalNavigator);else delete globalThis.navigator;
 globalThis.fetch=originalFetch;
-console.log('通过：地区失败仍显示天气、旧定位不覆盖新地区、区县识别、城市区县搜索、不泄露街道与精确坐标、地区缓存、未来降雨、雨雪雷暴提示、风力/体感/防晒、AQI口径与缺失数据、真实来源备用、定位坐标取整和缓存。');
+console.log('通过：首次自动定位、权限变更自动继续、移动后刷新位置、手动地区保留、手机定位兼容、重复订阅与清理、地区失败仍显示天气、旧定位不覆盖新地区、区县识别、天气与 AQI 提示、备用来源和坐标取整。');

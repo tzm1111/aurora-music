@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import { Cloud, CloudRain, Sun, Snowflake, Moon, MapPin, X, RefreshCw, Umbrella, Wind, LoaderCircle, Search, ChevronDown } from 'lucide-react';
-import { useLocalWeather, loadLocalWeather, locateWeather } from '../store/useLocalWeather';
+import { useLocalWeather, loadLocalWeather, locateWeather, startWeatherUpdates, refreshCurrentWeather } from '../store/useLocalWeather';
 import type { WeatherLocation } from '../store/useLocalWeather';
 import { apiRequest } from '../services/api';
 import { useDialogFocus } from '../lib/useDialogFocus';
@@ -41,7 +41,7 @@ function WeatherPopover({ anchor, onClose }: { anchor: RefObject<HTMLButtonEleme
   };
   return createPortal(<div ref={panel} className="weather-popover" role="dialog" aria-label="位置与天气" tabIndex={-1} style={position}>
     <div className="weather-popover-head"><div><small>{location?.kind === 'manual' ? '已选择地区' : '当前位置'}</small><h2>{placeLabel(location)}</h2></div><button aria-label="关闭天气面板" onClick={onClose}><X size={17}/></button></div>
-    {location && !location.district && <p className="weather-small-note">{locationError || '尚未识别到区县，可重新定位或手动选择。'}</p>}
+    {(locationError || (location && !location.district)) && <p className="weather-small-note">{locationError || '尚未识别到区县，可重新定位或手动选择。'}</p>}
     {data && <><div className="weather-popover-summary"><span>{Math.round(data.temperature)}° · {data.label}</span><span>空气 {data.airQuality.aqi === null ? '暂不可用' : `${data.airQuality.label} · ${Math.round(data.airQuality.aqi)}`}</span></div><ul className="weather-mini-tips">{data.tips.slice(0, 3).map(tip => <li key={tip}>{tip}</li>)}</ul></>}
     {(busy || error) && <p className={`weather-small-note ${error ? 'weather-small-error' : ''}`} role="status">{busy ? '正在更新位置与天气…' : error}</p>}
     <div className="weather-location-actions"><button disabled={busy} onClick={locateWeather}><MapPin size={14}/>{location ? '重新定位' : '定位到我所在的区'}</button>{location && <button disabled={busy} aria-label="刷新天气" onClick={() => void loadLocalWeather(location, true)}><RefreshCw size={14}/></button>}</div>
@@ -60,7 +60,7 @@ export function WeatherWidget() {
   const trigger = useRef<HTMLButtonElement>(null);
   const close = useCallback(() => setOpen(false), []);
   const entries = useMemo(() => {
-    if (!data) return [{ Icon: Cloud, text: error ? '天气暂不可用 · 点击重试' : '定位后查看当地天气' }];
+    if (!data) return [{ Icon: Cloud, text: error ? '天气暂不可用 · 点击查看' : '正在获取当地天气' }];
     return [{ Icon: ICONS[data.type] || Cloud, text: `${Math.round(data.temperature)}° · ${data.label}` },
       { Icon: Umbrella, text: data.rainProbability !== null ? `未来 6 小时降雨 ${data.rainProbability}%` : data.nextRainAmount != null ? `未来 6 小时降水 ${data.nextRainAmount} mm` : '降雨预报暂不可用' },
       { Icon: Wind, text: data.airQuality.aqi === null ? '空气质量暂不可用' : `空气 ${data.airQuality.label} · ${Math.round(data.airQuality.aqi)}` }];
@@ -70,24 +70,8 @@ export function WeatherWidget() {
     const timer = setInterval(() => { if (!document.hidden) setSlide(value => (value + 1) % entries.length); }, 5000);
     return () => clearInterval(timer);
   }, [open, hovered, entries.length]);
-  useEffect(() => {
-    if (location || !navigator.permissions) return;
-    let stopped = false;
-    navigator.permissions.query({ name: 'geolocation' }).then(permission => {
-      if (!stopped && permission.state === 'granted' && !useLocalWeather.getState().location && !useLocalWeather.getState().busy) locateWeather();
-    }).catch(() => {});
-    return () => { stopped = true; };
-  }, [location]);
-  useEffect(() => {
-    if (!location) return;
-    const refresh = () => {
-      const state = useLocalWeather.getState();
-      if (document.visibilityState === 'visible' && !state.busy && (!state.data || Date.now() - state.data.fetchedAt > 15 * 60 * 1000)) void loadLocalWeather(location);
-    };
-    const timer = setInterval(refresh, 15 * 60 * 1000);
-    document.addEventListener('visibilitychange', refresh);
-    return () => { clearInterval(timer); document.removeEventListener('visibilitychange', refresh); };
-  }, [location]);
+  useEffect(startWeatherUpdates, []);
+  useEffect(() => { if (open) refreshCurrentWeather(); }, [open]);
   const entry = entries[slide % entries.length];
   return <div className="weather-status-area">
     <button ref={trigger} className={`weather-status-strip ${open ? 'expanded' : ''}`} aria-label={`天气与位置：${placeLabel(location)}`} aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(value => !value)} onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)} onFocus={() => setHovered(true)} onBlur={() => setHovered(false)}>
