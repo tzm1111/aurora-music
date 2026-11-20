@@ -10,7 +10,9 @@ const code = ts.transpileModule(input.replace('import.meta.env?.VITE_API_BASE_UR
 const originalFetch = globalThis.fetch;
 const originalTimeout = AbortSignal.timeout;
 const stored = new Map();
-globalThis.sessionStorage = { getItem: key => stored.get(key), setItem: (key, value) => stored.set(key, value) };
+const temporary = new Map();
+globalThis.localStorage = { getItem: key => stored.get(key) ?? null, setItem: (key, value) => stored.set(key, value), removeItem: key => stored.delete(key) };
+globalThis.sessionStorage = { getItem: key => temporary.get(key) ?? null, setItem: (key, value) => temporary.set(key, value), removeItem: key => temporary.delete(key) };
 const { searchTracks, apiRequest, resolveAudioSource } = await import('data:text/javascript;base64,' + Buffer.from(code).toString('base64'));
 try {
   let options;
@@ -25,6 +27,61 @@ try {
   await apiRequest('/api/dj/session', { description: 'test' });
   assert.equal(options.headers.get('X-Aurora-Session'), 'test-sealed-session');
   assert.equal(options.credentials, 'omit');
+  const storageKey = 'aurora-backend-session:https://backend.example';
+  assert.equal(stored.get(storageKey), 'test-sealed-session');
+  assert.equal(temporary.has(storageKey), false);
+  temporary.clear();
+  const reopened = await import('data:text/javascript;base64,' + Buffer.from(code + '\n// reopened browser').toString('base64'));
+  await reopened.apiRequest('/api/dj/status');
+  assert.equal(options.headers.get('X-Aurora-Session'), 'test-sealed-session');
+  stored.clear(); temporary.set(storageKey, 'legacy-encrypted-token');
+  globalThis.fetch = async (_url, init) => {
+    options = init;
+    return new Response(JSON.stringify({ success: true }));
+  };
+  await reopened.apiRequest('/api/dj/status');
+  assert.equal(options.headers.get('X-Aurora-Session'), 'legacy-encrypted-token');
+  assert.equal(stored.get(storageKey), 'legacy-encrypted-token');
+  assert.equal(temporary.has(storageKey), false);
+
+  let releaseStatus;
+  globalThis.fetch = async url => {
+    if (url.endsWith('/api/account/status')) return new Promise(resolve => { releaseStatus = resolve; });
+    return new Response(JSON.stringify({ success: true }), { headers: { 'X-Aurora-Session': 'new-model-token' } });
+  };
+  const staleStatus = reopened.apiRequest('/api/account/status');
+  await reopened.apiRequest('/api/dj/model', { provider: 'deepseek', apiKey: 'private-test-key' });
+  releaseStatus(new Response(JSON.stringify({ success: true }), { headers: { 'X-Aurora-Session': 'stale-status-token' } }));
+  await staleStatus;
+  assert.equal(stored.get(storageKey), 'new-model-token');
+  assert.ok(![...stored.values()].some(value => value.includes('private-test-key')));
+
+  const connectionCalls = [];
+  let releaseAccount;
+  globalThis.fetch = async (url, init) => {
+    connectionCalls.push(url);
+    if (url.endsWith('/api/account/check')) return new Promise(resolve => { releaseAccount = resolve; });
+    assert.equal(init.headers.get('X-Aurora-Session'), 'account-authorized-token');
+    return new Response(JSON.stringify({ success: true }), { headers: { 'X-Aurora-Session': 'combined-account-model-token' } });
+  };
+  const authorize = reopened.apiRequest('/api/account/check', {});
+  const connect = reopened.apiRequest('/api/dj/model', { provider: 'deepseek', apiKey: 'private-test-key' });
+  await Promise.resolve();
+  assert.equal(connectionCalls.length, 1);
+  releaseAccount(new Response(JSON.stringify({ success: true }), { headers: { 'X-Aurora-Session': 'account-authorized-token' } }));
+  await Promise.all([authorize, connect]);
+  assert.equal(stored.get(storageKey), 'combined-account-model-token');
+
+  globalThis.fetch = async url => {
+    if (url.endsWith('/api/account/status')) return new Promise(resolve => { releaseStatus = resolve; });
+    return new Response(JSON.stringify({ success: true }), { headers: { 'X-Aurora-Session': '' } });
+  };
+  const staleAfterClear = reopened.apiRequest('/api/account/status');
+  await reopened.apiRequest('/api/dj/model/clear', {});
+  releaseStatus(new Response(JSON.stringify({ success: true }), { headers: { 'X-Aurora-Session': 'must-not-restore-token' } }));
+  await staleAfterClear;
+  assert.equal(stored.has(storageKey), false);
+  console.log('通过：关闭后恢复加密连接、旧临时凭证迁移、迟到查询不覆盖新连接、扫码与模型保存依次执行、清除连接不被恢复。');
   globalThis.fetch = async () => { throw new TypeError('Failed to fetch'); };
   await assert.rejects(searchTracks('netease', 'test'), /无法连接音乐服务/);
   AbortSignal.timeout = () => AbortSignal.abort(new DOMException('Timeout', 'TimeoutError'));
@@ -41,6 +98,7 @@ try {
   globalThis.fetch = originalFetch;
   AbortSignal.timeout = originalTimeout;
   delete globalThis.sessionStorage;
+  delete globalThis.localStorage;
 }
 
 // 上游 200 + 空 URL 也要回退；不覆盖已有权限音源，不伪造试听/版权结果。

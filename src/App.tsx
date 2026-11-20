@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useState } from 'react';
+import { useEffect, useCallback, useRef, useState } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import { Dialog } from './components/Dialog';
 import { useAutoDJ } from './lib/useAutoDJ';
@@ -29,8 +29,14 @@ export default function App() {
   const immersive = usePlayer(s => s.immersive);
   const [accountOpen, setAccountOpen] = useState(false);
   const [account, setAccount] = useState<AccountStatus>({ loggedIn: false, profile: null });
-  const updateAccount = useCallback((value: AccountStatus) => { setAccount(value); window.dispatchEvent(new Event('aurora-connections')); }, []);
-  useEffect(() => { apiRequest<AccountStatus>('/api/account/status').then(setAccount).catch(() => {}); }, []);
+  const accountRequest = useRef<AbortController | null>(null);
+  const updateAccount = useCallback((value: AccountStatus) => { accountRequest.current?.abort(); setAccount(value); window.dispatchEvent(new Event('aurora-connections')); }, []);
+  useEffect(() => {
+    const controller = new AbortController();
+    accountRequest.current = controller;
+    apiRequest<AccountStatus>('/api/account/status', undefined, controller.signal).then(value => { if (!controller.signal.aborted) setAccount(value); }).catch(() => {});
+    return () => controller.abort();
+  }, []);
   const navOpen = usePlayer(s => s.navOpen);
   const setNavOpen = usePlayer(s => s.setNavOpen);
   const nowPlayingOpen = usePlayer(s => s.nowPlayingOpen);

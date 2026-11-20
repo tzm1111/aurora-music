@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { createDJSet } from '../services/djEngine.js';
 import { djModelStatus, callDJPlan } from '../services/llmService.js';
-import { musicCookie, getMusicSession } from '../services/neteaseSession.js';
+import { musicCookie, getMusicSession, clearMusicSession } from '../services/neteaseSession.js';
 import { requirePlayerOrigin } from '../middleware/playerOrigin.js';
 const router = Router();
 router.use((req, res, next) => {
@@ -21,7 +21,16 @@ router.post('/model', async (req, res) => {
   } catch { res.status(503).json({ success: false, error: { message: '暂时无法创建连接。' } }); }
 });
 
-router.get('/status', (req, res) => res.json({ success: true, ...djModelStatus(getMusicSession(req)?.model) }));
+router.get('/status', (req, res) => {
+  const model = getMusicSession(req)?.model;
+  res.json({ success: true, ...djModelStatus(model), saved: Boolean(model?.apiKey), model: model?.model || null });
+});
+router.post('/model/clear', (req, res) => {
+  const session = getMusicSession(req);
+  if (session) delete session.model;
+  if (!session?.cookie && !session?.qrKey) clearMusicSession(req, res);
+  res.json({ success: true, ...djModelStatus(), saved: false });
+});
 router.post('/session', async (req, res) => {
   const { description, previous, excludeIds, recentTracks, offset, context } = req.body || {};
   if (typeof description !== 'string' || !description.trim() || description.length > 300) return res.status(400).json({ success: false, error: { message: '请用 1 到 300 字描述心情或场景。' } });

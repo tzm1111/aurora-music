@@ -10,6 +10,8 @@
 .studio-settings i,.account-connected { position:absolute; width:5px; height:5px; border-radius:50%; right:10px; top:10px; }
 .studio-settings i.connected,.account-connected { background:#a9ece0; box-shadow:0 0 8px #a9ece055; }
 .connection-dialog > p.model-benefits { margin:8px 0 24px; font-size:13px; line-height:1.75; color:#a8bdc8; text-align:left; }
+.connection-dialog > p.model-saved { color:#b9e2d5; font-size:12px; }
+.model-clear { min-height:44px; margin-top:8px; color:#a6b8c7; font-size:12px; }
 .topbar .account-button { width:44px; height:44px; padding:0; display:grid; place-items:center; border:0; position:relative; }
 .studio-layout { display:flex; flex-direction:column; gap:10px; }
 .studio-presence,.has-session .studio-presence { width:100%; display:block; text-align:center; }

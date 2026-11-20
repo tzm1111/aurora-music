@@ -12,7 +12,9 @@ import { accountRouter } from './routes/account.js';
 import { persistMusicSession } from './services/neteaseSession.js';
 import { playerOrigins } from './middleware/playerOrigin.js';
 import { djRouter } from './routes/dj.js';
+import { initializeSessionSecret } from './utils/sealedState.js';
 
+initializeSessionSecret();
 const app = express();
 if (process.env.NODE_ENV === 'production') app.set('trust proxy', 1);
 

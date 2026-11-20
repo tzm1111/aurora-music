@@ -122,7 +122,7 @@ npm run dev         # 前端，端口 5173（/api 已代理到 3001）
 仓库包含 `Dockerfile` 和 `render.yaml`。在 Render 的 **New → Blueprint** 选择本仓库，按配置创建 `aurora-music` 服务即可。容器内只公开播放器网页与 Express API，网易云接口在 `127.0.0.1:3100` 内部运行，不对公网开放。Render 提供 HTTPS 与 `onrender.com` 域名；首页、账号连接和 AI DJ 使用同一个地址。
 
 - 默认选择 Free 实例，未配置共享模型 Key；可以在播放器里连接自己的模型，也可以在 Render 环境变量中配置服务端模型。
-- Free 实例会在闲置后休眠，首次打开可能需要等待启动；服务重启后需要重新扫码或连接模型。正式长期使用可自行升级实例。
+- Free 实例会在闲置后休眠，首次打开可能需要等待启动。会话默认保存 30 天，持续使用时续期。跨容器重建保留连接需要配置固定的 `AURORA_SESSION_SECRET`（64 位十六进制随机值）；常驻服务未配置时自动使用本机密钥文件。
 - `APP_ORIGIN` 可选：使用自定义域名时填入完整 HTTPS 来源，例如 `https://music.example.com`；默认读取 Render 的 `RENDER_EXTERNAL_URL`。
 - 网易云音源在不同地区的可用性仍需上线后验证，取决于接口网络、账号权限和版权。
 - 不要把本地 `.env` 上传到仓库或镜像；Docker 构建已排除环境文件。
@@ -139,4 +139,6 @@ npm run dev         # 前端，端口 5173（/api 已代理到 3001）
 
 GitHub Pages 部署完整播放器前端，Vercel Hobby 运行 `api/index.js` 中的 Express 后端。音乐 API 通过 npm 模块直接调用，无需常驻第二个进程。Vercel 设置 `PLAYER_ORIGINS=https://tzm1111.github.io`，并配置仅在服务器保存的 `AURORA_SESSION_SECRET`（64 位十六进制随机值）。GitHub 仓库变量 `AURORA_API_URL` 填入实际 Vercel HTTPS 域名，Pages 使用 GitHub Actions 发布。
 
-跨站登录使用服务器加密会话凭证；前端仅在 sessionStorage 保存不可解读的凭证，网易云 Cookie 和模型 Key 不明文写入浏览器。音频采用仅授权单首歌曲的短期票据，支持频谱和进度拖动。会话到期、后端密钥变更或浏览器会话结束后需要重新连接账号/模型。
+连接状态使用服务器加密会话凭证，前端在 localStorage 保存加密凭证，兼容同源与跨站部署，并迁移旧标签页中的会话。网易云 Cookie 和模型 Key 不明文写入浏览器。关闭浏览器后可恢复连接，退出网易云与清除模型连接分别处理。会话到期、后端密钥变更、清除浏览器数据或网易云授权失效后需要重新连接。
+
+魔搭、Render 等托管环境应通过私密环境变量配置固定的 `AURORA_SESSION_SECRET`，以便休眠唤醒和重新部署后解密原有连接。密钥不能写入公开 Dockerfile。未配置时使用服务账号目录下的 `.aurora-music/session.key`，可以跨进程重启恢复，但容器磁盘重建会丢失该文件。

@@ -5,12 +5,40 @@ import type { ContextSnapshot } from '../../shared/contextMix.js';
 export const API_BASE = (import.meta.env?.VITE_API_BASE_URL || '').replace(/\/+$/, '');
 export const ONLINE_PLAYER_URL = 'https://www.modelscope.cn/studios/Tzm1111/aurora-music?mode=full';
 const SESSION_KEY = 'aurora-backend-session:' + API_BASE;
+let fallbackSession: string | null = null;
+function saveSession(token: string | null) {
+  fallbackSession = token;
+  try {
+    if (token) localStorage.setItem(SESSION_KEY, token);
+    else localStorage.removeItem(SESSION_KEY);
+    try { sessionStorage.removeItem(SESSION_KEY); } catch { /* 旧标签页存储可能不可用。 */ }
+  } catch {
+    try {
+      if (token) sessionStorage.setItem(SESSION_KEY, token);
+      else sessionStorage.removeItem(SESSION_KEY);
+    } catch { /* 禁用存储时仅维持当前页面连接。 */ }
+  }
+}
+function savedSession(): string | null {
+  try {
+    const token = localStorage.getItem(SESSION_KEY);
+    if (token) return token;
+    // 迁移之前仅存在于当前标签页的加密凭证。
+    try {
+      const legacy = sessionStorage.getItem(SESSION_KEY);
+      if (legacy) { saveSession(legacy); return legacy; }
+    } catch { /* 不影响持久存储。 */ }
+    return null;
+  } catch {
+    try { return sessionStorage.getItem(SESSION_KEY) || fallbackSession; }
+    catch { return fallbackSession; }
+  }
+}
 export function apiUrl(path: string) { return API_BASE + path; }
 async function apiFetch(path: string, init: RequestInit = {}) {
   const headers = new Headers(init.headers);
-  if (API_BASE) {
-    try { const token = sessionStorage.getItem(SESSION_KEY); if (token) headers.set('X-Aurora-Session', token); } catch { /* 受限浏览器仍可匿名播放 */ }
-  }
+  const sentSession = savedSession();
+  if (sentSession) headers.set('X-Aurora-Session', sentSession);
   const timeout = AbortSignal.timeout(path === '/api/dj/session' ? 55000 : 25000);
   const signal = init.signal ? AbortSignal.any([init.signal, timeout]) : timeout;
   let response: Response;
@@ -21,8 +49,9 @@ async function apiFetch(path: string, init: RequestInit = {}) {
     if (timeout.aborted) throw new Error('音乐服务响应超时，请稍后重试。', { cause: error });
     throw new Error('无法连接音乐服务，请检查网络或使用魔搭在线入口。', { cause: error });
   }
-  const token = API_BASE ? response.headers.get('X-Aurora-Session') : null;
-  if (API_BASE && token) { try { sessionStorage.setItem(SESSION_KEY, token); } catch { /* 不持久化登录状态 */ } }
+  const token = response.headers?.get('X-Aurora-Session') ?? null;
+  // 迟到的状态查询不能覆盖已经保存或清除的新连接。
+  if (token !== null && savedSession() === sentSession) saveSession(token || null);
   return response;
 }
 export async function resolveAudioSource(src: string, signal?: AbortSignal): Promise<string> {
@@ -98,10 +127,20 @@ export async function searchTracks(
 export type DJPlan = { description: string; label: string; intro: string; queries: string[]; excludeTerms: string[]; instrumental: boolean; artistFocus?: string | null; context?: ContextSnapshot };
 export type DJResult = { success: boolean; mode: 'ai' | 'rules'; modelAvailable: boolean; plan: DJPlan; tracks: Track[]; loggedIn: boolean };
 export type AccountStatus = { loggedIn: boolean; profile: { nickname: string; avatarUrl: string; vipType: number } | null };
-export async function apiRequest<T>(path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
+export type ModelStatus = { available: boolean; saved: boolean; provider: string; model: string | null };
+async function requestData<T>(path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
   const response = await apiFetch(path, { method: body === undefined ? 'GET' : 'POST', credentials: 'same-origin',
     headers: body === undefined ? undefined : { 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body), signal });
   const data = await readJson<T & { success?: boolean; error?: { message?: string } }>(response);
   if (!response.ok || data.success === false) throw new Error(data.error?.message || '服务暂时无法连接，请重试。');
   return data;
+}
+let connectionRequest: Promise<unknown> = Promise.resolve();
+export function apiRequest<T>(path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
+  const changesConnection = body !== undefined && (path.startsWith('/api/account/') || path.startsWith('/api/dj/model'));
+  if (!changesConnection) return requestData<T>(path, body, signal);
+  // 扫码确认、保存模型和退出依次使用最新凭证，避免互相覆盖。
+  const request = connectionRequest.then(() => requestData<T>(path, body, signal));
+  connectionRequest = request.catch(() => {});
+  return request;
 }

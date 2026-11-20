@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { getMusicSession } from '../services/neteaseSession.js';
+import { getMusicSession, clearMusicSession } from '../services/neteaseSession.js';
 import { accountRequest } from '../services/neteaseService.js';
 import { requirePlayerOrigin } from '../middleware/playerOrigin.js';
 const router = Router();
@@ -42,5 +42,10 @@ router.post('/check', async (req, res) => {
     res.json({ success: true, status: data.code === 800 ? 'expired' : data.code === 802 ? 'scanned' : data.code === 801 ? 'waiting' : 'unavailable' });
   } catch { res.status(502).json({ success: false, error: { message: '无法检查扫码状态，请重新生成二维码。' } }); }
 });
-router.post('/logout', (req, res) => { const session = getMusicSession(req); if (session) { session.cookie = ''; session.profile = null; session.qrKey = ''; } res.json({ success: true }); });
+router.post('/logout', (req, res) => {
+  const session = getMusicSession(req);
+  if (session) { session.cookie = ''; session.profile = null; session.qrKey = ''; session.qrExpires = 0; }
+  if (!session?.model) clearMusicSession(req, res);
+  res.json({ success: true });
+});
 export { router as accountRouter };
