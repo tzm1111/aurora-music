@@ -49,6 +49,7 @@ async function apiFetch(path: string, init: RequestInit = {}) {
     if (timeout.aborted) throw new Error('音乐服务响应超时，请稍后重试。', { cause: error });
     throw new Error('无法连接音乐服务，请检查网络或使用魔搭在线入口。', { cause: error });
   }
+  signal.throwIfAborted();
   const token = response.headers?.get('X-Aurora-Session') ?? null;
   // 迟到的状态查询不能覆盖已经保存或清除的新连接。
   if (token !== null && savedSession() === sentSession) saveSession(token || null);
@@ -129,6 +130,7 @@ export type DJResult = { success: boolean; mode: 'ai' | 'rules'; modelAvailable:
 export type AccountStatus = { loggedIn: boolean; profile: { nickname: string; avatarUrl: string; vipType: number } | null };
 export type ModelStatus = { available: boolean; saved: boolean; provider: string; model: string | null };
 async function requestData<T>(path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
+  signal?.throwIfAborted();
   const response = await apiFetch(path, { method: body === undefined ? 'GET' : 'POST', credentials: 'same-origin',
     headers: body === undefined ? undefined : { 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body), signal });
   const data = await readJson<T & { success?: boolean; error?: { message?: string } }>(response);

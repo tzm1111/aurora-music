@@ -81,6 +81,24 @@ try {
   releaseStatus(new Response(JSON.stringify({ success: true }), { headers: { 'X-Aurora-Session': 'must-not-restore-token' } }));
   await staleAfterClear;
   assert.equal(stored.has(storageKey), false);
+  const cancelledCheck = new AbortController();
+  globalThis.fetch = async () => {
+    cancelledCheck.abort();
+    return new Response(JSON.stringify({ success: true }), { headers: { 'X-Aurora-Session': 'cancelled-qr-token' } });
+  };
+  await assert.rejects(reopened.apiRequest('/api/account/check', {}, cancelledCheck.signal), { name: 'AbortError' });
+  assert.equal(stored.has(storageKey), false, '关闭/刷新后的响应不能保存旧二维码凭证');
+  let requests = 0, releaseQueued;
+  globalThis.fetch = async () => { requests++; return new Promise(resolve => { releaseQueued = resolve; }); };
+  const generating = reopened.apiRequest('/api/account/qr', {});
+  const queuedController = new AbortController();
+  const queued = reopened.apiRequest('/api/account/check', {}, queuedController.signal);
+  const rejection = assert.rejects(queued, { name: 'AbortError' });
+  await Promise.resolve(); queuedController.abort();
+  releaseQueued(new Response(JSON.stringify({ success: true })));
+  await Promise.all([generating, rejection]);
+  assert.equal(requests, 1, '排队中的旧扫码查询取消后不能再发送');
+  console.log('通过：已取消扫码响应不保存旧凭证、排队查询取消后不再发送。');
   console.log('通过：关闭后恢复加密连接、旧临时凭证迁移、迟到查询不覆盖新连接、扫码与模型保存依次执行、清除连接不被恢复。');
   globalThis.fetch = async () => { throw new TypeError('Failed to fetch'); };
   await assert.rejects(searchTracks('netease', 'test'), /无法连接音乐服务/);

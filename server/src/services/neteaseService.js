@@ -171,8 +171,8 @@ export async function getStreamUrl(neteaseId, cookie = '') {
   if (!item) { const error = new Error('当前账号没有可用音源，可能受版权或会员限制'); error.code = 'NO_AUDIO'; throw error; }
   return item.url;
 }
-export function accountRequest(path, params = {}, cookie = '') {
-  return apiGet(path, params, 10000, cookie, [200, 800, 801, 802, 803]);
+export function accountRequest(path, params = {}, cookie = '', timeoutMs = 10000) {
+  return apiGet(path, params, timeoutMs, cookie, [200, 800, 801, 802, 803]);
 }
 
 /**

@@ -3,14 +3,18 @@ import { useEffect, useRef, useState } from 'react';
 import { X, RefreshCw, LoaderCircle } from 'lucide-react';
 import { apiRequest } from '../services/api';
 import type { AccountStatus } from '../services/api';
+import { pollAccountQR } from '../lib/accountPolling';
+import type { QRCheck } from '../lib/accountPolling';
 export function AccountDialog({ account, onChange, onClose }: { account: AccountStatus; onChange: (a: AccountStatus) => void; onClose: () => void }) {
   const [image, setImage] = useState('');
   const [expires, setExpires] = useState(0);
   const [status, setStatus] = useState('');
   const [busy, setBusy] = useState(false);
   const controller = useRef<AbortController | null>(null);
+  const polling = useRef<ReturnType<typeof pollAccountQR> | null>(null);
   useEffect(() => () => controller.current?.abort(), []);
   const createQR = async () => {
+    polling.current?.stop();
     controller.current?.abort(); const ctrl = new AbortController(); controller.current = ctrl;
     setBusy(true); setStatus('正在准备二维码…'); setImage('');
     try {
@@ -22,23 +26,15 @@ export function AccountDialog({ account, onChange, onClose }: { account: Account
   };
   useEffect(() => {
     if (!image || account.loggedIn) return;
-    let stopped = false;
-    let timer: ReturnType<typeof setTimeout>;
-    const ctrl = new AbortController();
-    const check = async () => {
-      if (Date.now() > expires) { setStatus('二维码已过期'); return; }
-      try {
-        const data = await apiRequest<AccountStatus & { status: string }>('/api/account/check', {}, ctrl.signal);
-        if (stopped) return;
-        if (data.status === 'authorized') { onChange(data); setStatus('已连接'); return; }
-        if (data.status === 'expired') { setStatus('二维码已过期'); return; }
-        if (data.status === 'scanned') setStatus('已扫码，等待确认');
-        if (data.status === 'unavailable') { setStatus('扫码状态不可用'); return; }
-      } catch { if (!stopped) { setStatus('连接中断'); return; } }
-      if (!stopped) timer = setTimeout(check, 3000);
-    };
-    timer = setTimeout(check, 3000);
-    return () => { stopped = true; ctrl.abort(); clearTimeout(timer); };
+    const loop = pollAccountQR({ expiresAt: expires,
+      check: signal => apiRequest<QRCheck>('/api/account/check', {}, signal),
+      onStatus: setStatus, onAuthorized: onChange });
+    polling.current = loop;
+    // 扫码时常切换到网易云 App；回到网页后立即查询，不依赖后台计时器。
+    const resume = () => { if (document.visibilityState === 'visible') loop.resume(); };
+    document.addEventListener('visibilitychange', resume);
+    window.addEventListener('online', resume);
+    return () => { loop.stop(); document.removeEventListener('visibilitychange', resume); window.removeEventListener('online', resume); };
   }, [image, expires, account.loggedIn, onChange]);
   const logout = async () => {
     try { await apiRequest('/api/account/logout', {}); onChange({ loggedIn: false, profile: null }); setImage(''); }
