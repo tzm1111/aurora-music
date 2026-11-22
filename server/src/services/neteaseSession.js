@@ -46,8 +46,15 @@ export function persistMusicSession(req, res, next) {
       if (session && session.expires < Date.now() + TTL / 2) session.expires = Date.now() + TTL;
       if (session && JSON.stringify(session) !== original) {
         const token = seal(session, 'aurora-session');
-        res.set('X-Aurora-Session', token);
-        res.cookie('aurora_session', token, { httpOnly: true, sameSite: 'strict', secure: process.env.NODE_ENV === 'production', maxAge: Math.max(0, session.expires - Date.now()) });
+        // 登录成功后的凭证比二维码会话大；避免代理响应头/浏览器 Cookie 大小限制。
+        // JSON 中仍是服务器加密的凭证，不返回网易云 Cookie 或模型 Key。
+        body = { ...body, connectionToken: token };
+        if (token.length <= 3000) {
+          res.set('X-Aurora-Session', token);
+          res.cookie('aurora_session', token, { httpOnly: true, sameSite: 'strict', secure: process.env.NODE_ENV === 'production', maxAge: Math.max(0, session.expires - Date.now()) });
+        } else {
+          res.clearCookie('aurora_session', { httpOnly: true, sameSite: 'strict', secure: process.env.NODE_ENV === 'production' });
+        }
       }
       return sendJson.call(this, body);
     };

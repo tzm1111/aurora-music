@@ -131,9 +131,16 @@ export type AccountStatus = { loggedIn: boolean; profile: { nickname: string; av
 export type ModelStatus = { available: boolean; saved: boolean; provider: string; model: string | null };
 async function requestData<T>(path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
   signal?.throwIfAborted();
+  const sentSession = savedSession();
   const response = await apiFetch(path, { method: body === undefined ? 'GET' : 'POST', credentials: 'same-origin',
     headers: body === undefined ? undefined : { 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body), signal });
-  const data = await readJson<T & { success?: boolean; error?: { message?: string } }>(response);
+  const data = await readJson<T & { success?: boolean; connectionToken?: string; error?: { message?: string; code?: string } }>(response);
+  signal?.throwIfAborted();
+  const headerToken = response.headers?.get('X-Aurora-Session') ?? null;
+  if (typeof data.connectionToken === 'string' && (savedSession() === sentSession || (headerToken !== null && savedSession() === headerToken))) {
+    saveSession(data.connectionToken || null);
+  }
+  delete data.connectionToken;
   if (!response.ok || data.success === false) throw new Error(data.error?.message || '服务暂时无法连接，请重试。');
   return data;
 }

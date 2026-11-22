@@ -32,7 +32,7 @@ try {
   clock = 0; messages.length = 0;
   pollAccountQR({ expiresAt: 5000, check: async () => { throw new Error('offline'); }, onStatus: text => messages.push(text), onAuthorized: () => assert.fail('不应登录') });
   await next(); await next();
-  assert.equal(clock, 5000); assert.match(messages.at(-1), /已过期/); assert.equal(jobs.size, 0);
+  assert.equal(clock, 5000); assert.match(messages.at(-1), /登录结果无法确认/); assert.equal(jobs.size, 0);
 
   clock = 0; let finish, calls = 0; messages.length = 0;
   const loop = pollAccountQR({ expiresAt: 180000, check: signal => { calls++; return new Promise(resolve => { finish = resolve; assert.equal(signal.aborted, false); }); }, onStatus: text => messages.push(text), onAuthorized: () => assert.fail('关闭后不能登录') });
@@ -41,6 +41,8 @@ try {
   assert.equal(messages.length, 0); assert.equal(jobs.size, 0);
 
   clock = 0;
+  pollAccountQR({ expiresAt: 1500, check: async () => status('authorized'), onStatus: text => messages.push(text), onAuthorized: () => authorized++ });
+  await next(); assert.equal(authorized, 2); assert.equal(jobs.size, 0);
   pollAccountQR({ expiresAt: 180000, check: async () => status('expired'), onStatus: text => messages.push(text), onAuthorized: () => assert.fail() });
   await next(); assert.equal(jobs.size, 0); assert.match(messages.at(-1), /已过期/);
   console.log('通过：扫码后断网与异常状态自动恢复、保留已扫码提示、退避至过期、回前台立即查询且不重叠、关闭后拒绝迟到结果。');
@@ -49,14 +51,16 @@ try {
 process.env.AURORA_SESSION_SECRET = randomBytes(32).toString('hex');
 process.env.APP_ORIGIN = 'https://qr-test.example';
 process.env.NETEASE_EMBEDDED = '0';
+let upstreamCookie = 'test-private-cookie';
 let upstreamCode = 801, qrFails = false, profileFails = false, upstreamCalls = 0;
 const upstream = http.createServer((req, res) => {
   upstreamCalls++;
+  assert.equal(new URL(req.url, 'http://localhost').searchParams.get('noCookie'), 'true');
   const path = new URL(req.url, 'http://localhost').pathname;
   let data;
   if (path === '/login/qr/key') data = { code: 200, data: { unikey: 'test-qr-key' } };
   else if (path === '/login/qr/create') data = qrFails ? { code: 500 } : { code: 200, data: { qrimg: 'data:image/png;base64,test' } };
-  else if (path === '/login/qr/check') data = { code: upstreamCode, ...(Number(upstreamCode) === 803 ? { cookie: 'test-private-cookie' } : {}) };
+  else if (path === '/login/qr/check') data = { code: upstreamCode, ...(Number(upstreamCode) === 803 ? { cookie: upstreamCookie } : {}) };
   else if (path === '/login/status') data = profileFails ? { code: 500 } : { code: 200, data: { profile: { nickname: 'Test', vipType: 11 } } };
   else throw new Error('Unexpected request');
   res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(data));
@@ -64,7 +68,7 @@ const upstream = http.createServer((req, res) => {
 upstream.listen(0, '127.0.0.1'); await once(upstream, 'listening');
 process.env.NETEASE_MUSIC_API_URL = `http://127.0.0.1:${upstream.address().port}`;
 const { default: app } = await import('../server/src/app.js');
-const { unseal } = await import('../server/src/utils/sealedState.js');
+const { unseal, seal } = await import('../server/src/utils/sealedState.js');
 const server = app.listen(0, '127.0.0.1'); await once(server, 'listening');
 const base = `http://127.0.0.1:${server.address().port}`;
 async function post(route, token) {
@@ -79,7 +83,7 @@ try {
   }
   upstreamCode = 500;
   const failed = await post('check', token); assert.equal(failed.status, 502);
-  assert.equal((await failed.json()).error.code, 'QR_CHECK_RETRY');
+  assert.equal((await failed.json()).error.code, 'NETEASE_CODE_500');
   upstreamCode = 802; assert.equal((await (await post('check', token)).json()).status, 'scanned');
   qrFails = true;
   const refresh = await post('qr', token); assert.equal(refresh.status, 502);
@@ -92,6 +96,16 @@ try {
   const count = upstreamCalls;
   assert.equal((await (await post('check', savedToken)).json()).status, 'authorized');
   assert.equal(upstreamCalls, count, '成功后重复查询不再访问已失效二维码');
+  upstreamCode = '803'; upstreamCookie = 'MUSIC_U=' + 'a'.repeat(4200);
+  const delayedToken = seal({ ...challenge, qrExpires: Date.now() - 5000 }, 'aurora-session');
+  const delayed = await post('check', delayedToken); const delayedBody = await delayed.json();
+  assert.equal(delayedBody.status, 'authorized', '截止时仍能取回网易云已确认的真实授权');
+  assert.equal(delayed.headers.get('x-aurora-session'), null);
+  assert.ok(delayed.headers.get('set-cookie').length < 300);
+  assert.equal(unseal(delayedBody.connectionToken, 'aurora-session').cookie, upstreamCookie);
+  assert.equal((await (await post('check', delayedBody.connectionToken)).json()).loggedIn, true);
+  const lost = await post('check'); assert.equal((await lost.json()).status, 'session_lost');
+  console.log('通过：较大真实格式登录凭证仅用加密响应体、截止时取回迟到授权、缺失会话不误报过期、内部接口禁止重复Cookie头。');
   const logout = await post('logout', savedToken); assert.equal(logout.status, 200);
   console.log('通过：HTTP 扫码等待/确认/过期、上游502后再次查询、刷新失败保留凭证、资料查询失败仍登录、加密保存且不泄漏Cookie、成功后重复查询。');
 } finally { await Promise.all([new Promise(resolve => server.close(resolve)), new Promise(resolve => upstream.close(resolve))]); }

@@ -98,6 +98,16 @@ try {
   releaseQueued(new Response(JSON.stringify({ success: true })));
   await Promise.all([generating, rejection]);
   assert.equal(requests, 1, '排队中的旧扫码查询取消后不能再发送');
+  globalThis.fetch = async () => new Response(JSON.stringify({ success: true, status: 'authorized', loggedIn: true, connectionToken: 'body-only-authorized-token' }));
+  const bodyAuthorization = await reopened.apiRequest('/api/account/check', {});
+  assert.equal(stored.get(storageKey), 'body-only-authorized-token');
+  assert.equal(bodyAuthorization.connectionToken, undefined, '凭证由请求封装保存，不交给界面显示');
+  globalThis.fetch = async (_url, init) => {
+    assert.equal(init.headers.get('X-Aurora-Session'), 'body-only-authorized-token');
+    return new Response(JSON.stringify({ success: true }));
+  };
+  await reopened.apiRequest('/api/account/status');
+  console.log('通过：托管代理移除自定义响应头后，JSON 中的加密登录凭证仍能保存并用于下一次查询。');
   console.log('通过：已取消扫码响应不保存旧凭证、排队查询取消后不再发送。');
   console.log('通过：关闭后恢复加密连接、旧临时凭证迁移、迟到查询不覆盖新连接、扫码与模型保存依次执行、清除连接不被恢复。');
   globalThis.fetch = async () => { throw new TypeError('Failed to fetch'); };

@@ -53,6 +53,7 @@ async function apiGet(path, params = {}, timeoutMs = 8000, cookie = '', allowedC
         new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('音乐接口超时')), timeoutMs); }),
       ]);
       const json = result.body;
+      if (json.code) json.code = Number(json.code);
       if (result.status >= 400 || (json.code && !allowedCodes.includes(json.code))) throw new Error(json.message || json.msg || '音乐接口暂时不可用');
       return json;
     } finally { clearTimeout(timer); }
@@ -63,11 +64,16 @@ async function apiGet(path, params = {}, timeoutMs = 8000, cookie = '', allowedC
   }
   const res = await fetch(url, { headers: cookie ? { Cookie: cookie } : undefined, signal: AbortSignal.timeout(timeoutMs) });
   if (!res.ok) {
-    throw new Error(`网易云 API 返回 HTTP ${res.status}`);
+    const error = new Error(`网易云 API 返回 HTTP ${res.status}`);
+    error.code = `NETEASE_HTTP_${res.status}`;
+    throw error;
   }
   const json = await res.json();
+  if (json.code) json.code = Number(json.code);
   if (json.code && !allowedCodes.includes(json.code)) {
-    throw new Error(json.message || json.msg || `网易云 API 错误码 ${json.code}`);
+    const error = new Error('网易云接口暂时不可用');
+    error.code = /^\d{3}$/.test(String(json.code)) ? `NETEASE_CODE_${json.code}` : 'NETEASE_RESPONSE_INVALID';
+    throw error;
   }
   return json;
 }
@@ -172,7 +178,8 @@ export async function getStreamUrl(neteaseId, cookie = '') {
   return item.url;
 }
 export function accountRequest(path, params = {}, cookie = '', timeoutMs = 10000) {
-  return apiGet(path, params, timeoutMs, cookie, [200, 800, 801, 802, 803]);
+  // Aurora 从响应体取凭证，内部 API 不必再重复发一组 Set-Cookie 响应头。
+  return apiGet(path, { ...params, noCookie: true }, timeoutMs, cookie, [200, 800, 801, 802, 803]);
 }
 
 /**

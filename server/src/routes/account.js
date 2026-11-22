@@ -28,7 +28,9 @@ router.post('/check', async (req, res) => {
   const session = getMusicSession(req);
   // 成功响应丢失后的重试仍返回已连接，避免清空 qrKey 后被误判为过期。
   if (session?.cookie && !session.qrKey) return res.json({ success: true, status: 'authorized', loggedIn: true, profile: session.profile || null });
-  if (!session?.qrKey || session.qrExpires < Date.now()) return res.json({ success: true, status: 'expired' });
+  if (!session?.qrKey) return res.json({ success: true, status: 'session_lost' });
+  // 到截止时间再向网易云确认一次，取回已在 App 确认、但响应迟到的授权。
+  if (session.qrExpires + 30000 < Date.now()) return res.json({ success: true, status: 'expired' });
   try {
     const data = await accountRequest('/login/qr/check', { key: session.qrKey, timestamp: Date.now() });
     const code = Number(data.code);
@@ -43,7 +45,11 @@ router.post('/check', async (req, res) => {
       return res.json({ success: true, status: 'authorized', loggedIn: true, profile: session.profile });
     }
     res.json({ success: true, status: code === 800 ? 'expired' : code === 802 ? 'scanned' : code === 801 ? 'waiting' : 'unavailable' });
-  } catch { res.status(502).json({ success: false, error: { code: 'QR_CHECK_RETRY', message: '扫码状态查询暂时失败，正在重试。' } }); }
+  } catch (error) {
+    const reason = /^NETEASE_(?:HTTP|CODE)_\d{3}$/.test(error.code || '') ? error.code : error.name === 'TimeoutError' ? 'NETEASE_TIMEOUT' : 'NETEASE_NETWORK';
+    console.warn('网易云扫码结果查询失败', { code: reason });
+    res.status(502).json({ success: false, error: { code: reason, message: `登录结果暂时无法确认（${reason}），正在重试。` } });
+  }
 });
 router.post('/logout', (req, res) => {
   const session = getMusicSession(req);

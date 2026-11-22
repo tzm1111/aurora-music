@@ -81,6 +81,17 @@ try {
   const clearAll = await request('/api/account/logout', clearModel.headers.get('x-aurora-session'), 'POST');
   assert.equal(clearAll.headers.get('x-aurora-session'), '');
   assert.match(clearAll.headers.get('set-cookie'), /Expires=Thu, 01 Jan 1970/);
+  const largeSession = seal({ ...remembered, cookie: 'MUSIC_U=' + 'x'.repeat(4200), expires: Date.now() + 60000 }, 'aurora-session');
+  const largeResponse = await request('/api/dj/status', largeSession);
+  const largeBody = await largeResponse.json();
+  assert.equal(largeResponse.headers.get('x-aurora-session'), null, '大凭证不放入代理响应头');
+  assert.match(largeResponse.headers.get('set-cookie'), /Expires=Thu, 01 Jan 1970/);
+  assert.ok(largeResponse.headers.get('set-cookie').length < 300);
+  assert.equal(unseal(largeBody.connectionToken, 'aurora-session').cookie.length, 4208);
+  const restored = await request('/api/account/status', largeBody.connectionToken);
+  assert.equal((await restored.json()).loggedIn, true);
+  assert.ok(!JSON.stringify(largeBody).includes('private-test-key'));
+  console.log('通过：较大登录凭证通过加密 JSON 保存、避免过大 Cookie 与重复响应头、下一次查询恢复。');
   console.log('通过：正常 HTTP 入口恢复账号和模型、30天续期、模型状态不返回Key、单独退出/清除与最后连接清除。');
 } finally {
   await new Promise(resolve => server.close(resolve));
