@@ -55,9 +55,16 @@ async function apiFetch(path: string, init: RequestInit = {}) {
   if (token !== null && savedSession() === sentSession) saveSession(token || null);
   return response;
 }
-export async function resolveAudioSource(src: string, signal?: AbortSignal): Promise<string> {
-  const match = API_BASE && src.match(/^\/api\/music\/stream\/netease\/(\d+)/);
-  if (match) { const result = await apiRequest<{ src: string }>('/api/music/playback/netease/' + match[1], undefined, signal); return apiUrl(result.src); }
+export type PlaybackInfo = { preview: boolean; duration: number; loggedIn: boolean };
+export async function resolveAudioSource(src: string, signal?: AbortSignal, onInfo?: (info: PlaybackInfo) => void): Promise<string> {
+  const match = src.match(/^\/api\/music\/stream\/netease\/(\d+)/);
+  // <audio> 无法附带本地保存的加密会话。同源播放也先以当前账号获取单曲票据。
+  if (match) {
+    const result = await apiRequest<{ src: string } & PlaybackInfo>('/api/music/playback/netease/' + match[1], undefined, signal);
+    signal?.throwIfAborted();
+    onInfo?.(result);
+    return apiUrl(result.src);
+  }
   return src.startsWith('/api/') ? apiUrl(src) : src;
 }
 

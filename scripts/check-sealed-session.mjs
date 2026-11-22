@@ -92,6 +92,42 @@ try {
   assert.equal((await restored.json()).loggedIn, true);
   assert.ok(!JSON.stringify(largeBody).includes('private-test-key'));
   console.log('通过：较大登录凭证通过加密 JSON 保存、避免过大 Cookie 与重复响应头、下一次查询恢复。');
+  const realFetch = globalThis.fetch;
+  process.env.NETEASE_EMBEDDED = '0';
+  process.env.NETEASE_MUSIC_API_URL = 'http://member-provider.example';
+  let providerCalls = 0;
+  globalThis.fetch = async (url, init) => {
+    const parsed = new URL(url);
+    if (parsed.hostname === 'member-provider.example') {
+      providerCalls++;
+      const member = Boolean(init.headers?.Cookie);
+      if (member) assert.equal(init.headers.Cookie, 'MUSIC_U=' + 'x'.repeat(4200));
+      const id = Number(parsed.searchParams.get('id'));
+      const trial = !member || (id === 988003 && parsed.pathname === '/song/url/v1') || id === 988004;
+      return new Response(JSON.stringify({ code: 200, data: [{ id, url: 'https://member-audio.example/song.mp3', time: trial ? 30000 : 240000, ...(trial ? { freeTrialInfo: { start: 0 } } : {}) }] }));
+    }
+    if (parsed.hostname === 'member-audio.example') {
+      assert.equal(init.headers.Range, 'bytes=0-3');
+      return new Response(new Uint8Array([1, 2, 3, 4]), { status: 206, headers: { 'Content-Type': 'audio/mpeg', 'Content-Range': 'bytes 0-3/4', 'Content-Length': '4' } });
+    }
+    return realFetch(url, init);
+  };
+  try {
+    const guest = await request('/api/music/playback/netease/988001', '');
+    const guestData = await guest.json(); assert.equal(guestData.preview, true); assert.equal(guestData.duration, 30);
+    const member = await request('/api/music/playback/netease/988001', largeBody.connectionToken);
+    const memberData = await member.json(); assert.equal(memberData.preview, false); assert.equal(memberData.duration, 240); assert.equal(memberData.loggedIn, true);
+    assert.equal(providerCalls, 2, '会员不能复用游客试听缓存');
+    assert.ok(!JSON.stringify(memberData).includes('MUSIC_U'));
+    const audio = await realFetch(base + memberData.src, { headers: { Range: 'bytes=0-3' } });
+    assert.equal(audio.status, 206); assert.equal((await audio.arrayBuffer()).byteLength, 4);
+    const fallback = await request('/api/music/playback/netease/988003', largeBody.connectionToken);
+    assert.equal((await fallback.json()).preview, false, '兼容接口返回完整音源时替换试听');
+    const restricted = await request('/api/music/playback/netease/988004', largeBody.connectionToken);
+    assert.equal((await restricted.json()).preview, true, '网易云仍限制试听时不伪装成完整音源');
+    console.log('通过：会员 Cookie 真正送至音源接口、游客试听缓存隔离、无 Cookie 的音频元素使用单曲票据、Range 播放、会员兼容接口完整音源优先且保留实际限制。');
+  } finally { globalThis.fetch = realFetch; }
+
   console.log('通过：正常 HTTP 入口恢复账号和模型、30天续期、模型状态不返回Key、单独退出/清除与最后连接清除。');
 } finally {
   await new Promise(resolve => server.close(resolve));

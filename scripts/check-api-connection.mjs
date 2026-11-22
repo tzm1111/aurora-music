@@ -108,6 +108,22 @@ try {
   };
   await reopened.apiRequest('/api/account/status');
   console.log('通过：托管代理移除自定义响应头后，JSON 中的加密登录凭证仍能保存并用于下一次查询。');
+  const localCode = ts.transpileModule(input.replace('import.meta.env?.VITE_API_BASE_URL', "''"), { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
+  const localApi = await import('data:text/javascript;base64,' + Buffer.from(localCode).toString('base64'));
+  stored.set('aurora-backend-session:', 'local-member-token');
+  let playbackInfo;
+  globalThis.fetch = async (url, init) => {
+    assert.equal(url, '/api/music/playback/netease/988001');
+    assert.equal(init.headers.get('X-Aurora-Session'), 'local-member-token');
+    assert.equal(init.credentials, 'same-origin');
+    return new Response(JSON.stringify({ success: true, src: '/api/music/stream/netease/988001?ticket=member', preview: false, duration: 240, loggedIn: true }));
+  };
+  const memberSource = await localApi.resolveAudioSource('/api/music/stream/netease/988001', undefined, info => { playbackInfo = info; });
+  assert.equal(memberSource, '/api/music/stream/netease/988001?ticket=member');
+  assert.equal(playbackInfo.preview, false); assert.equal(playbackInfo.duration, 240);
+  assert.equal(await localApi.resolveAudioSource('blob:local-song'), 'blob:local-song');
+  console.log('通过：魔搭同源音频也带本地会员会话取单曲票据，回传真实试听/完整时长，本地文件不受影响。');
+
   console.log('通过：已取消扫码响应不保存旧凭证、排队查询取消后不再发送。');
   console.log('通过：关闭后恢复加密连接、旧临时凭证迁移、迟到查询不覆盖新连接、扫码与模型保存依次执行、清除连接不被恢复。');
   globalThis.fetch = async () => { throw new TypeError('Failed to fetch'); };

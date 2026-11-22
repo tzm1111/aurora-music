@@ -115,10 +115,11 @@ router.get('/playback/netease/:id', requirePlayerOrigin, async (req, res) => {
   if (!/^\d+$/.test(id)) return res.status(400).json({ success: false, error: { message: '非法的歌曲 ID' } });
   if (!hasSealedSessions()) return res.status(503).json({ success: false, error: { message: '分离部署会话未配置' } });
   try {
-    const url = await netease.getStreamUrl(id, musicCookie(req));
-    const ticket = seal({ id, url, expires: Date.now() + 5 * 60 * 1000 }, 'aurora-media');
+    const cookie = musicCookie(req);
+    const info = await netease.getStreamInfo(id, cookie);
+    const ticket = seal({ id, url: info.url, expires: Date.now() + 5 * 60 * 1000 }, 'aurora-media');
     res.set('Cache-Control', 'no-store');
-    res.json({ success: true, src: `/api/music/stream/netease/${id}?ticket=${encodeURIComponent(ticket)}` });
+    res.json({ success: true, src: `/api/music/stream/netease/${id}?ticket=${encodeURIComponent(ticket)}`, preview: info.preview, duration: info.duration, loggedIn: Boolean(cookie) });
   } catch (error) {
     // 不记录 SDK 原始错误对象，避免其请求配置携带账号 Cookie。
     const code = error.code === 'NO_AUDIO' ? 'NO_AUDIO' : 'PLAYBACK_ERROR';

@@ -155,13 +155,14 @@ export async function getPlayability(ids, cookie = '') {
       if (result.has(String(item.id))) result.set(String(item.id), cacheAudio(item, cookie));
     }
   } catch { /* v1 不可用时尝试旧接口，仍遵守原账号的版权权限。 */ }
-  // v1 即使返回 200，也可能只给部分歌曲空 URL；只补查缺失的歌曲，不覆盖已有音源。
-  const missing = safeIds.filter(id => !result.get(id));
+  // 已登录账号若 v1 只给试听，用同一账号再查兼容接口；仅在返回完整音源时替换。
+  const missing = safeIds.filter(id => !result.get(id) || (cookie && result.get(id).preview));
   if (missing.length) {
     try {
       const json = await apiGet('/song/url', { id: missing.join(','), br: 320000 }, 10000, cookie);
       for (const item of json.data || []) {
-        if (result.has(String(item.id)) && !result.get(String(item.id))) result.set(String(item.id), cacheAudio(item, cookie));
+        const previous = result.get(String(item.id));
+        if (result.has(String(item.id)) && (!previous || (previous.preview && item.url && !item.freeTrialInfo))) result.set(String(item.id), cacheAudio(item, cookie));
       }
     } catch (error) {
       if (![...result.values()].some(Boolean)) throw error;
@@ -169,14 +170,15 @@ export async function getPlayability(ids, cookie = '') {
   }
   return result;
 }
-export async function getStreamUrl(neteaseId, cookie = '') {
+export async function getStreamInfo(neteaseId, cookie = '') {
   const cached = urlCache.get(cacheKey(String(neteaseId), cookie));
-  if (cached && cached.expiresAt > Date.now()) return cached.url;
+  if (cached && cached.expiresAt > Date.now()) return cached;
   const result = await getPlayability([neteaseId], cookie);
   const item = result.get(String(neteaseId));
   if (!item) { const error = new Error('当前账号没有可用音源，可能受版权或会员限制'); error.code = 'NO_AUDIO'; throw error; }
-  return item.url;
+  return item;
 }
+export async function getStreamUrl(neteaseId, cookie = '') { return (await getStreamInfo(neteaseId, cookie)).url; }
 export function accountRequest(path, params = {}, cookie = '', timeoutMs = 10000) {
   // Aurora 从响应体取凭证，内部 API 不必再重复发一组 Set-Cookie 响应头。
   return apiGet(path, { ...params, noCookie: true }, timeoutMs, cookie, [200, 800, 801, 802, 803]);

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useCallback } from 'react';
-import { usePlayer, useCurrentTrack } from '../store/usePlayer';
+import { usePlayer, useCurrentTrack, resolveTrack } from '../store/usePlayer';
 import { connectAudioElement, resumeContext } from '../lib/audioVisualizer';
 import { API_BASE, resolveAudioSource } from '../services/api';
 import { generateDemoTrack, trackIdToSeed } from '../lib/demoAudio';
@@ -29,6 +29,7 @@ export function AudioEngine() {
   const trackSrc = current?.src;
   const trackDuration = current?.duration ?? 0;
   const isDemo = current?.tags.includes('demo') ?? false;
+  const demoDuration = isDemo ? trackDuration : 0;
   const isPlaying = usePlayer(s => s.isPlaying);
   const volume = usePlayer(s => s.volume);
   const playRequest = usePlayer(s => s.playRequest);
@@ -67,7 +68,7 @@ export function AudioEngine() {
     }
     usePlayer.getState().setAudioError(null);
     // 只有明确标注的演示环境音才合成，真实曲目失败不会替换成另一段音频。
-    const url = trackSrc || (isDemo ? synthUrl(trackId, trackDuration) : null);
+    const url = trackSrc || (isDemo ? synthUrl(trackId, demoDuration) : null);
     if (!url) {
       usePlayer.setState({ isPlaying: false, playbackStatus: 'error', audioError: '这首歌还没有音频文件，请重新导入或搜索原曲。' });
       el.removeAttribute('src'); el.load(); return;
@@ -77,15 +78,34 @@ export function AudioEngine() {
     el.pause(); el.removeAttribute('src'); el.load();
     restoringPosition.current = true;
     usePlayer.setState({ duration: 0 });
-    if (API_BASE && url.startsWith('/api/')) {
-      el.crossOrigin = 'anonymous';
-      resolveAudioSource(url, ctrl.signal).then(src => {
+    if (/^\/api\/music\/stream\/netease\/\d+/.test(url) || (API_BASE && url.startsWith('/api/'))) {
+      if (API_BASE) el.crossOrigin = 'anonymous';
+      else el.removeAttribute('crossorigin');
+      resolveAudioSource(url, ctrl.signal, info => {
+        if (ctrl.signal.aborted || ticket !== generation.current) return;
+        const state = usePlayer.getState();
+        const track = resolveTrack(state, trackId);
+        if (track) state.registerRemoteTracks([{ ...track, preview: info.preview, duration: info.duration || track.duration }]);
+      }).then(src => {
         if (ctrl.signal.aborted || ticket !== generation.current) return;
         el.src = src; el.load(); startPlayback();
       }).catch(error => { if (!ctrl.signal.aborted) failPlayback(error.message || '音频连接失败'); });
     } else { el.src = url; el.load(); }
     return () => ctrl.abort();
-  }, [trackId, trackSrc, trackDuration, isDemo, playRequest, libraryReady, startPlayback, failPlayback]);
+  }, [trackId, trackSrc, demoDuration, isDemo, playRequest, libraryReady, startPlayback, failPlayback]);
+
+  useEffect(() => {
+    const refresh = () => {
+      const state = usePlayer.getState();
+      const track = resolveTrack(state, state.queue[state.currentIndex]);
+      if (!track?.src?.match(/^\/api\/music\/stream\/netease\/\d+/)) return;
+      // 换账号后丢弃游客试听票据，保留当前曲目、进度及暂停状态。
+      usePlayer.setState({ playRequest: state.playRequest + 1, audioError: null,
+        playbackStatus: state.isPlaying ? 'loading' : 'paused' });
+    };
+    window.addEventListener('aurora-account', refresh);
+    return () => window.removeEventListener('aurora-account', refresh);
+  }, []);
 
   useEffect(() => {
     const el = audioRef.current;

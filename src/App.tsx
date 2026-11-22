@@ -30,7 +30,7 @@ export default function App() {
   const [accountOpen, setAccountOpen] = useState(false);
   const [account, setAccount] = useState<AccountStatus>({ loggedIn: false, profile: null });
   const accountRequest = useRef<AbortController | null>(null);
-  const updateAccount = useCallback((value: AccountStatus) => { accountRequest.current?.abort(); setAccount(value); window.dispatchEvent(new Event('aurora-connections')); }, []);
+  const updateAccount = useCallback((value: AccountStatus) => { accountRequest.current?.abort(); setAccount(value); window.dispatchEvent(new Event('aurora-connections')); window.dispatchEvent(new Event('aurora-account')); }, []);
   useEffect(() => {
     const controller = new AbortController();
     accountRequest.current = controller;
